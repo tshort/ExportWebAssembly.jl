@@ -110,6 +110,20 @@ function irgen(func::ANY, tt::ANY)
     return mod
 end
 
+
+"""
+    export_bitcode(filename, func, tt)
+
+Export function `func` to LLVM bitcode in `filename`. 
+Specify the argument types as a Tuple{} in the `tt` argument.
+The bitcode is in WebAssembly-compatible format that can be converted to WebAssembly with Emscripten.
+
+Example: 
+```
+myfun(x) = sum((x, x, 1.0))
+export_bitcode("myfun.bc", myfun, Tuple{Float64})
+```
+"""
 function export_bitcode(filename, func::ANY, tt)
     mod = irgen(func, tt)
     bitcode = convert(Vector{UInt8}, mod)
