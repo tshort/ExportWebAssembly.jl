@@ -65,8 +65,8 @@ function irgen(func::ANY, tt::ANY)
     end
     let irmod = parse(LLVM.Module,
                       Base._dump_function(func, tt,
-                                          #=native=#false, #=wrapper=#false, #=strip=#false,
-                                          #=dump_module=#true, #=syntax=#:att, #=optimize=#false,
+                                          #=native=#false, #=wrapper=#false, #=strip=#true,
+                                          #=dump_module=#true, #=syntax=#:att, #=optimize=#true,
                                           params),
                       jlctx[])
         unshift!(irmods, irmod)
