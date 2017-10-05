@@ -65,7 +65,7 @@ function irgen(func::ANY, tt::ANY)
     end
     let irmod = parse(LLVM.Module,
                       Base._dump_function(func, tt,
-                                          #=native=#false, #=wrapper=#false, #=strip=#true,
+                                          #=native=#false, #=wrapper=#false, #=strip=#false,
                                           #=dump_module=#true, #=syntax=#:att, #=optimize=#true,
                                           params),
                       jlctx[])
@@ -92,9 +92,12 @@ function irgen(func::ANY, tt::ANY)
             # we don't need the generic wrapper
             unsafe_delete!(mod, llvmf)
         elseif startswith(llvmfn, "julia_$funname")
+            delete!(function_attributes(llvmf), EnumAttribute("sspreq"))
             # change the function name to match the Julian name
             LLVM.name!(llvmf, funname)
         else
+            # only occurs in debug builds
+            delete!(function_attributes(llvmf), EnumAttribute("sspreq"))
             # make function names safe
             # (LLVM ought to do this, see eg. D17738 and D19126), but fails
             # TODO: fix all globals?
@@ -106,7 +109,29 @@ function irgen(func::ANY, tt::ANY)
             end
         end
     end
+    tm = TargetMachine(Target("i686-pc-linux-gnu"), "i686-pc-linux-gnu")
+    # tm = TargetMachine(Target("nvptx-nvidia-cuda"), "nvptx-nvidia-cuda")
+    ModulePassManager() do pm
+        # eliminate all unused internal functions
+        #
+        # this isn't necessary, as we do the same in optimize! to inline kernel wrappers,
+        # but it results _much_ smaller modules which are easier to handle on optimize=false
+        global_optimizer!(pm)
+        global_dce!(pm)
+        strip_dead_prototypes!(pm)
+        add_transform_info!(pm, tm)
+        # TLI added by PMB
+        ccall(:LLVMAddLowerGCFramePass, Void,
+              (LLVM.API.LLVMPassManagerRef,), LLVM.ref(pm))
+        ccall(:LLVMAddLowerPTLSPass, Void,
+              (LLVM.API.LLVMPassManagerRef, Cint), LLVM.ref(pm), 1)
 
+        PassManagerBuilder() do pmb
+            always_inliner!(pm)
+            populate!(pm, pmb)
+        end
+        run!(pm, mod)
+    end
     return mod
 end
 
