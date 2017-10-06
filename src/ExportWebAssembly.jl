@@ -94,6 +94,8 @@ function irgen(func::ANY, tt::ANY)
         elseif startswith(llvmfn, "julia_$funname")
             # change the function name to match the Julian name
             LLVM.name!(llvmf, funname)
+            # Add the "used" attribute to keep Emscripten from throwing out this function
+            # Well, I would if I could. It's not a simple attribute. You have to add to `@llvm.used`.
         else
             # make function names safe
             # (LLVM ought to do this, see eg. D17738 and D19126), but fails
