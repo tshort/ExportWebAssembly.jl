@@ -46,7 +46,7 @@ const LLVMTypes = Union{(Type{t} for t in keys(llvmtypes))...}     # for dispatc
 llvmtype(x::LLVMTypes) = string(llvmtypes[x])
 llvmtype(::Type{Ptr{T}}) where {T} = string(llvmtypes[T], "*")
 llvmtype(::Type{Ptr{Void}}) = "i8*"
-llvmrettype(x) = x
+llvmrettype(x) = llvmtype(x)
 llvmrettype(::Type{Ptr{T}}) where {T} = llvmtype(Csize_t)
 
 
