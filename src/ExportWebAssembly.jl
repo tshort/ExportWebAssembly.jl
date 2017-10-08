@@ -166,24 +166,15 @@ function irgen(func::ANY, tt::ANY)
     tm = TargetMachine(Target("i686-pc-linux-gnu"), "i686-pc-linux-gnu")
     # tm = TargetMachine(Target("nvptx-nvidia-cuda"), "nvptx-nvidia-cuda")
     ModulePassManager() do pm
-        # eliminate all unused internal functions
-        #
-        # this isn't necessary, as we do the same in optimize! to inline kernel wrappers,
-        # but it results _much_ smaller modules which are easier to handle on optimize=false
+        add_library_info!(pm, triple(mod))
         global_optimizer!(pm)
         global_dce!(pm)
         strip_dead_prototypes!(pm)
         add_transform_info!(pm, tm)
-        # TLI added by PMB
-        ## ccall(:LLVMAddLowerGCFramePass, Void,
-        ##       (LLVM.API.LLVMPassManagerRef,), LLVM.ref(pm))
-        ## ccall(:LLVMAddLowerPTLSPass, Void,
-        ##       (LLVM.API.LLVMPassManagerRef, Cint), LLVM.ref(pm), 1)
-
-        PassManagerBuilder() do pmb
-            always_inliner!(pm)
-            populate!(pm, pmb)
-        end
+        ccall(:jl_add_optimization_passes, Void,
+              (LLVM.API.LLVMPassManagerRef, Cint),
+              LLVM.ref(pm), Base.JLOptions().opt_level)
+        dead_arg_elimination!(pm)   # parent doesn't use return value --> ret void
         run!(pm, mod)
     end
     return mod
