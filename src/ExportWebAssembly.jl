@@ -23,10 +23,56 @@ safe_fn(fn::String) = replace(fn, r"[^aA-zZ0-9_]", "_")
 safe_fn(f::Core.Function) = safe_fn(String(typeof(f).name.mt.name))
 safe_fn(f::LLVM.Function) = safe_fn(LLVM.name(f))
 
-# needed?
-function raise_exception(insblock::BasicBlock, ex::Value)
-end
+has_ccalls(x) = false
+has_ccalls(e::Expr) = e.head == :foreigncall || any(has_ccalls.(e.args))
 
+
+# how to map primitive Julia types to LLVM data types
+const llvmtypes = Dict{Type,Symbol}(
+    Void    => :void,
+    Int8    => :i8,
+    Int16   => :i16,
+    Int32   => :i32,
+    Int64   => :i64,
+    UInt8   => :i8,
+    UInt16  => :i16,
+    UInt32  => :i32,
+    UInt64  => :i64,
+    Float32 => :float,
+    Float64 => :double
+)
+const LLVMTypes = Union{(Type{t} for t in keys(llvmtypes))...}     # for dispatch
+
+llvmtype(x::LLVMTypes) = string(llvmtypes[x])
+llvmtype(::Type{Ptr{T}}) where {T} = string(llvmtypes[T], "*")
+llvmtype(::Type{Ptr{Void}}) = "i8*"
+llvmrettype(x) = x
+llvmrettype(::Type{Ptr{T}}) where {T} = llvmtype(Csize_t)
+
+
+replace_ccalls!(x) = nothing
+function replace_ccalls!(e::Expr) 
+    if e.head == :foreigncall
+        println("************")
+        @show e.args
+        e.head = :call
+        nargs = e.args[5]
+        funname = e.args[1].value
+        rettype = llvmrettype(e.args[2])
+        argtypes = llvmtype.([e.args[3]...])
+        argstrdeclr = join(argtypes, ", ")
+        argstrs = [string(argtypes[i], " %", i-1) for i in 1:length(argtypes)]
+        argstr = join(argstrs, ", ")
+        callstr = ("declare $rettype @$funname($argstrdeclr)", 
+		   """
+                   %$(nargs+1) = call $rettype @$funname($argstr)
+                   ret $rettype %$(nargs+1)
+                   """)
+        e.args = Any[Base.llvmcall, callstr, e.args[2], Tuple{e.args[3]...}, e.args[6:6+nargs-1]...]
+    else
+        replace_ccalls!.(e.args)
+    end
+end
 
 function irgen(func::ANY, tt::ANY)
     # collect all modules of IR
@@ -44,6 +90,12 @@ function irgen(func::ANY, tt::ANY)
         ref = convert(LLVM.API.LLVMModuleRef, ref)
         push!(irmods, LLVM.Module(ref))
     end
+    function hook_after_inference(src)
+        println(src.slottypes)
+        dump(src)
+        replace_ccalls!.(src.code)
+        return
+    end
     if VERSION >= v"0.7.0-DEV.1669"
         params = Base.CodegenParams(cached=false,
                                     track_allocations=false,
@@ -52,7 +104,7 @@ function irgen(func::ANY, tt::ANY)
                                     prefer_specsig=true,
                                     module_setup=hook_module_setup,
                                     module_activation=hook_module_activation,
-                                    raise_exception=hook_raise_exception)
+                                    after_inference=hook_after_inference)
     else
         hooks = Base.CodegenHooks(module_setup=hook_module_setup,
                                   module_activation=hook_module_activation,
@@ -123,10 +175,10 @@ function irgen(func::ANY, tt::ANY)
         strip_dead_prototypes!(pm)
         add_transform_info!(pm, tm)
         # TLI added by PMB
-        ccall(:LLVMAddLowerGCFramePass, Void,
-              (LLVM.API.LLVMPassManagerRef,), LLVM.ref(pm))
-        ccall(:LLVMAddLowerPTLSPass, Void,
-              (LLVM.API.LLVMPassManagerRef, Cint), LLVM.ref(pm), 1)
+        ## ccall(:LLVMAddLowerGCFramePass, Void,
+        ##       (LLVM.API.LLVMPassManagerRef,), LLVM.ref(pm))
+        ## ccall(:LLVMAddLowerPTLSPass, Void,
+        ##       (LLVM.API.LLVMPassManagerRef, Cint), LLVM.ref(pm), 1)
 
         PassManagerBuilder() do pmb
             always_inliner!(pm)
