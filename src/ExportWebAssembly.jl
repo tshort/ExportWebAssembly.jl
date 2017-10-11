@@ -23,61 +23,56 @@ safe_fn(fn::String) = replace(fn, r"[^aA-zZ0-9_]", "_")
 safe_fn(f::Core.Function) = safe_fn(String(typeof(f).name.mt.name))
 safe_fn(f::LLVM.Function) = safe_fn(LLVM.name(f))
 
-has_ccalls(x) = false
-has_ccalls(e::Expr) = e.head == :foreigncall || any(has_ccalls.(e.args))
 
+function llvmrettype(typ::Type)
+    isboxed_ref = Ref{Bool}()
+    llvmtyp = LLVMType(ccall(:julia_type_to_llvm, LLVM.API.LLVMTypeRef,
+                             (Any, Ptr{Bool}), typ, isboxed_ref))
+    if !isboxed_ref[]
+        return llvmtyp, typ
+    else
+        return llvmtype(Int32), Int32 
+    end
+end
 
-# how to map primitive Julia types to LLVM data types
-const llvmtypes = Dict{Type,Symbol}(
-    Void    => :void,
-    Int8    => :i8,
-    Int16   => :i16,
-    Int32   => :i32,
-    Int64   => :i64,
-    UInt8   => :i8,
-    UInt16  => :i16,
-    UInt32  => :i32,
-    UInt64  => :i64,
-    Float32 => :float,
-    Float64 => :double
-)
-const LLVMTypes = Union{(Type{t} for t in keys(llvmtypes))...}     # for dispatch
-
-llvmtype(x::LLVMTypes) = string(llvmtypes[x])
-llvmtype(::Type{Ptr{T}}) where {T} = string(llvmtypes[T], "*")
-llvmtype(::Type{Ptr{Void}}) = "i8*"
-llvmrettype(x) = llvmtype(x)
-llvmrettype(::Type{Ptr{T}}) where {T} = llvmtype(Csize_t)
+llvmtype(x) = string(LLVMType(ccall(:julia_type_to_llvm, LLVM.API.LLVMTypeRef, (Any, Bool), x, false)))
 
 
 replace_ccalls!(x) = nothing
 function replace_ccalls!(e::Expr) 
     if e.head == :foreigncall
-        println("************")
-        @show e.args
         e.head = :call
         nargs = e.args[5]
         funname = e.args[1].value
-        rettype = llvmrettype(e.args[2])
+        println("************ $(e.args[1].value)")
+        rettype, jlrettype = llvmrettype(e.args[2])
         argtypes = llvmtype.([e.args[3]...])
         argstrdeclr = join(argtypes, ", ")
         argstrs = [string(argtypes[i], " %", i-1) for i in 1:length(argtypes)]
         argstr = join(argstrs, ", ")
-        callstr = ("declare $rettype @$funname($argstrdeclr)", 
+        callstr = ("""
+		   %jl_value_t = type opaque
+		   declare $rettype @$funname($argstrdeclr)
+		   """, 
 		   """
                    %$(nargs+1) = call $rettype @$funname($argstr)
                    ret $rettype %$(nargs+1)
                    """)
-        e.args = Any[Base.llvmcall, callstr, e.args[2], Tuple{e.args[3]...}, e.args[6:6+nargs-1]...]
+        e.args = Any[Base.llvmcall, callstr, jlrettype, Tuple{e.args[3]...}, e.args[6:6+nargs-1]...]
+        if jlrettype != e.args[2]   # Boxed variable, so wrap in unsafe_pointer_to_objref()
+            e.args = Any[:unsafe_pointer_to_objref, Expr(:call, e.args...)]
+	end
     else
         replace_ccalls!.(e.args)
     end
 end
 
+
 function irgen(func::ANY, tt::ANY)
     # collect all modules of IR
     function hook_module_setup(ref::Ptr{Void})
         ref = convert(LLVM.API.LLVMModuleRef, ref)
+	global gref = ref
         module_setup(LLVM.Module(ref))
     end
     function hook_raise_exception(insblock::Ptr{Void}, ex::Ptr{Void})
@@ -91,34 +86,23 @@ function irgen(func::ANY, tt::ANY)
         push!(irmods, LLVM.Module(ref))
     end
     function hook_after_inference(src)
-        println(src.slottypes)
-        dump(src)
+        #dump(src)
         replace_ccalls!.(src.code)
         return
     end
-    if VERSION >= v"0.7.0-DEV.1669"
-        params = Base.CodegenParams(cached=false,
-                                    track_allocations=false,
-                                    code_coverage=false,
-                                    static_alloc=false,
-                                    prefer_specsig=true,
-                                    module_setup=hook_module_setup,
-                                    module_activation=hook_module_activation,
-                                    after_inference=hook_after_inference)
-    else
-        hooks = Base.CodegenHooks(module_setup=hook_module_setup,
-                                  module_activation=hook_module_activation,
-                                  raise_exception=hook_raise_exception)
-        params = Base.CodegenParams(cached=false,
-                                    track_allocations=false,
-                                    code_coverage=false,
-                                    static_alloc=false,
-                                    hooks=hooks)
-    end
+    params = Base.CodegenParams(cached=false,
+                                track_allocations=false,
+                                code_coverage=false,
+                                static_alloc=false,
+                                prefer_specsig=true,
+				imaging_mode=true,
+                                module_setup=hook_module_setup,
+                                module_activation=hook_module_activation,
+                                after_inference=hook_after_inference)
     let irmod = parse(LLVM.Module,
                       Base._dump_function(func, tt,
                                           #=native=#false, #=wrapper=#false, #=strip=#false,
-                                          #=dump_module=#true, #=syntax=#:att, #=optimize=#true,
+                                          #=dump_module=#true, #=syntax=#:att, #=optimize=#false,
                                           params),
                       jlctx[])
         unshift!(irmods, irmod)
@@ -128,7 +112,7 @@ function irgen(func::ANY, tt::ANY)
     #        for every module (causing us to re-parse the top-level module)
 
     # link all the modules
-    mod = LLVM.Module(safe_fn(func), jlctx[])
+    global mod = LLVM.Module(safe_fn(func), jlctx[])
     module_setup(mod)
     for irmod in irmods
         module_setup(irmod) # FIXME
@@ -165,12 +149,14 @@ function irgen(func::ANY, tt::ANY)
     end
     tm = TargetMachine(Target("i686-pc-linux-gnu"), "i686-pc-linux-gnu")
     # tm = TargetMachine(Target("nvptx-nvidia-cuda"), "nvptx-nvidia-cuda")
+    # ptls_pass = ModulePass("RemovePTLS", remove_ptls)
     ModulePassManager() do pm
+        # add!(pm, ptls_pass)
         add_library_info!(pm, triple(mod))
         global_optimizer!(pm)
         global_dce!(pm)
         strip_dead_prototypes!(pm)
-        add_transform_info!(pm, tm)
+        # add_transform_info!(pm, tm)
         ccall(:jl_add_optimization_passes, Void,
               (LLVM.API.LLVMPassManagerRef, Cint),
               LLVM.ref(pm), Base.JLOptions().opt_level)
