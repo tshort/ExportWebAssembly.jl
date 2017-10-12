@@ -1,0 +1,21 @@
+CC := emcc
+CXX := em++
+CFLAGS := -I. -I.. -I../../include
+SRCS := async core dl fs getaddrinfo getnameinfo linux-core linux-inotify loop-watcher loop pipe poll process proctitle signal stream \
+        tcp thread timer tty udp
+
+OBJS := $(SRCS:%=%.o)
+
+HEADERS := $(wildcard *.h)
+
+default: release
+
+release : unix.bc
+
+# source file rules
+%.o: %.c  $(HEADERS)
+
+unix.bc: $(OBJS) 
+	emcc $(OBJS) -o $@
+
+.PHONY: default 

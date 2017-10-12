@@ -1,0 +1,4 @@
+
+# override LLVM_VER = 4.0.1
+# override BUILD_LLVM_CLANG = 1
+override JULIA_THREADS := 0
