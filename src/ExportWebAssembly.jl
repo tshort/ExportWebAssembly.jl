@@ -62,13 +62,14 @@ function replace_ccalls!(e::Expr)
         if jlrettype != e.args[2]   # Boxed variable, so wrap in unsafe_pointer_to_objref()
             e.args = Any[:unsafe_pointer_to_objref, Expr(:call, e.args...)]
 	end
+        @show e
     else
         replace_ccalls!.(e.args)
     end
 end
 
 
-function irgen(func::ANY, tt::ANY)
+function irgen(@nospecialize(func), @nospecialize(tt); optimize = true, check = true)
     # collect all modules of IR
     function hook_module_setup(ref::Ptr{Void})
         ref = convert(LLVM.API.LLVMModuleRef, ref)
@@ -80,7 +81,7 @@ function irgen(func::ANY, tt::ANY)
         ex = convert(LLVM.API.LLVMValueRef, ex)
         raise_exception(BasicBlock(insblock), Value(ex))
     end
-    irmods = Vector{LLVM.Module}()
+    global irmods = Vector{LLVM.Module}()
     function hook_module_activation(ref::Ptr{Void})
         ref = convert(LLVM.API.LLVMModuleRef, ref)
         push!(irmods, LLVM.Module(ref))
@@ -156,13 +157,14 @@ function irgen(func::ANY, tt::ANY)
         global_optimizer!(pm)
         global_dce!(pm)
         strip_dead_prototypes!(pm)
-        # add_transform_info!(pm, tm)
+        add_transform_info!(pm, tm)
         ccall(:jl_add_optimization_passes, Void,
               (LLVM.API.LLVMPassManagerRef, Cint),
               LLVM.ref(pm), Base.JLOptions().opt_level)
         dead_arg_elimination!(pm)   # parent doesn't use return value --> ret void
-        run!(pm, mod)
+        optimize && run!(pm, mod)
     end
+    check && verify(mod)
     return mod
 end
 
@@ -180,12 +182,13 @@ myfun(x) = sum((x, x, 1.0))
 export_bitcode("myfun.bc", myfun, Tuple{Float64})
 ```
 """
-function export_bitcode(filename, func::ANY, tt)
-    mod = irgen(func, tt)
-    bitcode = convert(Vector{UInt8}, mod)
+function export_bitcode(filename, mod::LLVM.Module)
     open(filename, "w") do io 
-        write(io, bitcode)
+        write(io, mod)
     end
+    return
 end
+export_bitcode(filename, @nospecialize(func), tt; vargs...) =
+    export_bitcode(filename, irgen(func, tt, vargs...))
 
 end # module
