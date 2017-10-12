@@ -3,10 +3,10 @@ module VectorExample
 export CrudeVector
 
 malloc(x) = Base.llvmcall(
-    ("declare i8* @malloc(i32)",
+    ("declare i32 @malloc(i32)",
       """
-      %2 = tail call i8* @malloc(i32 %0)
-      ret i8* %2
+      %2 = tail call i32 @malloc(i32 %0)
+      ret i32 %2
       """), 
     Ptr{Int8}, Tuple{Int32}, x)
 
