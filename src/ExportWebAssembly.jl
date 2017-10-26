@@ -37,7 +37,7 @@ function irgen(@nospecialize(fun), @nospecialize(argtypes), args...;
     if include_init 
         push!(names, "init_julia")
         codegen!(cg, init_julia, Tuple{})
-        # codegen!(cg, sigaltstack, Tuple{Int,Int}) # julia_init needs this
+        codegen!(cg, sigaltstack, Tuple{Int32,Int32}) # init_julia needs this
     end
     if optimize_bitcode
         CodeGen.optimize!(cg.mod)
@@ -46,7 +46,7 @@ function irgen(@nospecialize(fun), @nospecialize(argtypes), args...;
     return cg.mod, names
 end
 
-sigaltstack(a, b) = 1
+sigaltstack(a, b) = 0x00000001
 
 function init_julia()
     ccall(:jl_init_timing, Void, ())
@@ -56,7 +56,7 @@ function init_julia()
     ccall(:jl_init_signal_async, Void, ())
     ccall(:jl_getpagesize, Int32, ())
     ccall(:uv_get_total_memory, UInt64, ())
-    ccall(:jl_find_stack_bottom, Void, ())
+    # ccall(:jl_find_stack_bottom, Void, ())
     ccall(:jl_init_threading, Void, ())
     ccall(:jl_gc_init, Void, ())
     ccall(:jl_gc_enable, Void, (Int,), 0)
