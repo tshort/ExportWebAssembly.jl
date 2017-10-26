@@ -1,7 +1,11 @@
 
-using Base.Test
+using Test
 using ExportWebAssembly
 
-myfun(x) = sum((x, x, 1.0))
+sum_tuple(x) = sum((x, x, 1))
 
-export_bitcode("myfun.bc", myfun, Tuple{Float64})
+write_js("sum_tuple.js", sum_tuple, Tuple{Int}, include_init = false)
+
+array_max(x) = maximum(Int[3,x])
+
+write_js("array_max.js", array_max, Tuple{Int}, include_init = true)

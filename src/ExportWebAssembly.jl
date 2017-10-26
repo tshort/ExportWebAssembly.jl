@@ -1,162 +1,92 @@
 
 module ExportWebAssembly
 
-export irgen, export_bitcode
+export irgen, write_js, write_wasm
 
+using CodeGen 
 using LLVM
 
 
-const jlctx = Ref{LLVM.Context}()
+const triple = Dict{Symbol, String}(
+    :wasm => "wasm32-unknown-unknown",
+    :asmjs => "asmjs-unknown-emscripten"
+)
+const datalayout = Dict{Symbol, String}(
+    :wasm => "e-m:e-p:32:32-i64:64-n32:64-S128",
+    :asmjs => "e-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-p:32:32:32-v128:32:128-n32-S128"
+)
 
-function __init__()
-    jlctx[] = LLVM.Context(convert(LLVM.API.LLVMContextRef,
-                                   cglobal(:jl_LLVMContext, Void)))
+function irgen(@nospecialize(fun), @nospecialize(argtypes), args...; 
+    flavor = :asmjs, 
+    optimize_lowering = true, 
+    optimize_bitcode = true, 
+    triple = triple[flavor], 
+    datalayout = datalayout[flavor], 
+    include_init = true
+)     
+    ci, dt = code_typed(fun, argtypes, optimize = optimize_lowering)[1]
+    names = [string(Base.function_name(fun))]
+    cg = CodeGen.CodeCtx(names[1], ci, dt, argtypes, triple = triple, datalayout = datalayout)
+    m = codegen!(cg)
+    n = length(args)
+    assert(iseven(n))
+    for i in 1:2:n
+        push!(names, string(Base.function_name(args[i])))
+        codegen!(cg, args[i], args[i+1])
+    end
+    if include_init 
+        push!(names, "init_julia")
+        codegen!(cg, init_julia, Tuple{})
+        # codegen!(cg, sigaltstack, Tuple{Int,Int}) # julia_init needs this
+    end
+    if optimize_bitcode
+        CodeGen.optimize!(cg.mod)
+    end
+    LLVM.verify(cg.mod)
+    return cg.mod, names
 end
 
-function module_setup(mod::LLVM.Module)
-    triple!(mod, "wasm32-unknown-unknown")
-    datalayout!(mod, "e-m:e-p:32:32-i64:64-n32:64-S128")
+sigaltstack(a, b) = 1
+
+function init_julia()
+    ccall(:jl_init_timing, Void, ())
+    ccall(:jl_get_ptls_states, Int32, ())
+    ccall(:jl_safepoint_init, Void, ())
+    ccall(:libsupport_init, Void, ())
+    ccall(:jl_init_signal_async, Void, ())
+    ccall(:jl_getpagesize, Int32, ())
+    ccall(:uv_get_total_memory, UInt64, ())
+    ccall(:jl_find_stack_bottom, Void, ())
+    ccall(:jl_init_threading, Void, ())
+    ccall(:jl_gc_init, Void, ())
+    ccall(:jl_gc_enable, Void, (Int,), 0)
+    ccall(:jl_init_types, Void, ())
+    return
 end
 
-# make function names safe
-safe_fn(fn::String) = replace(fn, r"[^aA-zZ0-9_]", "_")
-safe_fn(f::Core.Function) = safe_fn(String(typeof(f).name.mt.name))
-safe_fn(f::LLVM.Function) = safe_fn(LLVM.name(f))
-
-# needed?
-function raise_exception(insblock::BasicBlock, ex::Value)
+function write_js(filename, @nospecialize(fun), @nospecialize(argtypes), args...; 
+    flavor = :asmjs, 
+    optimize_lowering = true, 
+    optimize_bitcode = true, 
+    triple = triple[flavor], 
+    datalayout = datalayout[flavor], 
+    include_init = true,
+    memsize = 1073741824,
+    libdir = ".",
+    emcc_env = "",
+    emcc_args = ""
+)    
+    mod, names = irgen(fun, argtypes, args...; 
+                       flavor = flavor, optimize_lowering = optimize_lowering, optimize_bitcode = optimize_bitcode,
+                       triple = triple, datalayout = datalayout, include_init = include_init)
+    modfilename = string(filename, ".bc")
+    CodeGen.write(modfilename, mod)
+    jsnames = join(["'_$x'" for x in names], ", ") 
+    Base.run(`emcc $modfilename $libdir/libjulia.bc $libdir/libuv.bc -o $filename -s EXPORTED_FUNCTIONS="[$jsnames]" -s TOTAL_MEMORY=$memsize`)
 end
 
+write_wasm(@nospecialize(fun), @nospecialize(argtypes), args...; oargs...) =
+    write_js(filename, fun, result_type, argtypes, args...; flavor = :wasm, emcc_args = "-s WASM=1", oargs...)
 
-function irgen(func::ANY, tt::ANY)
-    # collect all modules of IR
-    function hook_module_setup(ref::Ptr{Void})
-        ref = convert(LLVM.API.LLVMModuleRef, ref)
-        module_setup(LLVM.Module(ref))
-    end
-    function hook_raise_exception(insblock::Ptr{Void}, ex::Ptr{Void})
-        insblock = convert(LLVM.API.LLVMValueRef, insblock)
-        ex = convert(LLVM.API.LLVMValueRef, ex)
-        raise_exception(BasicBlock(insblock), Value(ex))
-    end
-    irmods = Vector{LLVM.Module}()
-    function hook_module_activation(ref::Ptr{Void})
-        ref = convert(LLVM.API.LLVMModuleRef, ref)
-        push!(irmods, LLVM.Module(ref))
-    end
-    if VERSION >= v"0.7.0-DEV.1669"
-        params = Base.CodegenParams(cached=false,
-                                    track_allocations=false,
-                                    code_coverage=false,
-                                    static_alloc=false,
-                                    prefer_specsig=true,
-                                    module_setup=hook_module_setup,
-                                    module_activation=hook_module_activation,
-                                    raise_exception=hook_raise_exception)
-    else
-        hooks = Base.CodegenHooks(module_setup=hook_module_setup,
-                                  module_activation=hook_module_activation,
-                                  raise_exception=hook_raise_exception)
-        params = Base.CodegenParams(cached=false,
-                                    track_allocations=false,
-                                    code_coverage=false,
-                                    static_alloc=false,
-                                    hooks=hooks)
-    end
-    let irmod = parse(LLVM.Module,
-                      Base._dump_function(func, tt,
-                                          #=native=#false, #=wrapper=#false, #=strip=#false,
-                                          #=dump_module=#true, #=syntax=#:att, #=optimize=#true,
-                                          params),
-                      jlctx[])
-        unshift!(irmods, irmod)
-    end
-
-    # FIXME: Julia doesn't honor the module_setup hook, and module_activation isn't called
-    #        for every module (causing us to re-parse the top-level module)
-
-    # link all the modules
-    mod = LLVM.Module(safe_fn(func), jlctx[])
-    module_setup(mod)
-    for irmod in irmods
-        module_setup(irmod) # FIXME
-        link!(mod, irmod)
-    end
-
-    funname = string(typeof(func).name.mt.name)
-
-    # clean up incompatibilities
-    for llvmf in functions(mod)
-        llvmfn = LLVM.name(llvmf)
-        if startswith(llvmfn, "jlcall_")
-            # we don't need the generic wrapper
-            unsafe_delete!(mod, llvmf)
-        elseif startswith(llvmfn, "julia_$funname")
-            delete!(function_attributes(llvmf), EnumAttribute("sspreq"))
-            # change the function name to match the Julian name
-            LLVM.name!(llvmf, funname)
-            # Add the "used" attribute to keep Emscripten from throwing out this function
-            # Well, I would if I could. It's not a simple attribute. You have to add to `@llvm.used`.
-        else
-            # only occurs in debug builds
-            delete!(function_attributes(llvmf), EnumAttribute("sspreq"))
-            # make function names safe
-            # (LLVM ought to do this, see eg. D17738 and D19126), but fails
-            # TODO: fix all globals?
-            if !isdeclaration(llvmf)
-                llvmfn′ = safe_fn(llvmf)
-                if llvmfn != llvmfn′
-                    LLVM.name!(llvmf, llvmfn′)
-                end
-            end
-        end
-    end
-    tm = TargetMachine(Target("i686-pc-linux-gnu"), "i686-pc-linux-gnu")
-    # tm = TargetMachine(Target("nvptx-nvidia-cuda"), "nvptx-nvidia-cuda")
-    ModulePassManager() do pm
-        # eliminate all unused internal functions
-        #
-        # this isn't necessary, as we do the same in optimize! to inline kernel wrappers,
-        # but it results _much_ smaller modules which are easier to handle on optimize=false
-        global_optimizer!(pm)
-        global_dce!(pm)
-        strip_dead_prototypes!(pm)
-        add_transform_info!(pm, tm)
-        # TLI added by PMB
-        ccall(:LLVMAddLowerGCFramePass, Void,
-              (LLVM.API.LLVMPassManagerRef,), LLVM.ref(pm))
-        ccall(:LLVMAddLowerPTLSPass, Void,
-              (LLVM.API.LLVMPassManagerRef, Cint), LLVM.ref(pm), 1)
-
-        PassManagerBuilder() do pmb
-            always_inliner!(pm)
-            populate!(pm, pmb)
-        end
-        run!(pm, mod)
-    end
-    return mod
-end
-
-
-"""
-    export_bitcode(filename, func, tt)
-
-Export function `func` to LLVM bitcode in `filename`. 
-Specify the argument types as a Tuple{} in the `tt` argument.
-The bitcode is in WebAssembly-compatible format that can be converted to WebAssembly with Emscripten.
-
-Example: 
-```
-myfun(x) = sum((x, x, 1.0))
-export_bitcode("myfun.bc", myfun, Tuple{Float64})
-```
-"""
-function export_bitcode(filename, func::ANY, tt)
-    mod = irgen(func, tt)
-    bitcode = convert(Vector{UInt8}, mod)
-    open(filename, "w") do io 
-        write(io, bitcode)
-    end
-end
 
 end # module
