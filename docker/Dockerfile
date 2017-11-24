@@ -32,11 +32,10 @@ RUN emcc --version \
  && rm -rf /tmp/*
 
 # Julia
-RUN ${L32} git clone https://github.com/tshort/julia.git /julia
+RUN ${L32} git clone https://github.com/JuliaLang/julia.git /julia
 WORKDIR /julia
-RUN ${L32} git checkout codegen-wasm
 ADD Make.user /julia
-ADD llvm.mk /julia/deps
+# ADD llvm.mk /julia/deps
 RUN ${L32} make -j4 -C deps getall
 RUN ${L32} make -j4 -C deps compile-llvm
 RUN ${L32} make -j4 -C deps compile
@@ -44,7 +43,7 @@ RUN ${L32} make -j4  JULIA_CPU_TARGET=pentium4 MARCH=pentium4
 
 # libjulia
 RUN ${L32} git checkout -b codegen-wasm-libjulia
-RUN ${L32} git checkout codegen-wasm
+RUN ${L32} git checkout master
 RUN ${L32} git worktree add /libjulia codegen-wasm-libjulia
 WORKDIR /libjulia
 RUN mkdir usr; cp -r /julia/usr/include usr
