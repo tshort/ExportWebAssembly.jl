@@ -81,6 +81,7 @@ RUN julia -e "Pkg.add(\"MicroLogging\")"
 RUN julia -e "Pkg.clone(\"https://github.com/tshort/CodeGen.jl.git\")"
 RUN julia -e "Pkg.clone(\"https://github.com/tshort/ExportWebAssembly.jl.git\")"
 RUN julia -e "Pkg.checkout(\"ExportWebAssembly\", \"codegen-jl\")"
+RUN julia -e "using ExportWebAssembly"
 
 WORKDIR /work
 
