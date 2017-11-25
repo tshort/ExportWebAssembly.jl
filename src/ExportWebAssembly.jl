@@ -36,14 +36,14 @@ function irgen(@nospecialize(fun), @nospecialize(argtypes), args...;
         codegen!(cg, args[i], args[i+1])
     end
     if include_init 
-        push!(names, "init_julia")
+        push!(names, "init_julia_")
         codegen!(cg, init_julia, Tuple{})
         codegen!(cg, sigaltstack, Tuple{Int32,Int32}) # init_julia needs this
     end
     if optimize_bitcode
         CodeGen.optimize!(cg.mod)
     end
-    LLVM.verify(cg.mod)
+    # LLVM.verify(cg.mod)
     return cg.mod, names
 end
 

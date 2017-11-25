@@ -16,8 +16,8 @@ RUN tar -xzf  emsdk-portable.tar.gz
 # Set up emscripten
 WORKDIR /emsdk-portable
 RUN ./emsdk update
-RUN ./emsdk install sdk-master-32bit
-RUN ./emsdk activate sdk-master-32bit \
+RUN ./emsdk install sdk-tag-1.37.6-32bit
+RUN ./emsdk activate sdk-tag-1.37.6-32bit \
  && /bin/bash /emsdk-portable/emsdk_env.sh \
  && find /emsdk-portable -name "llvm-nm" -exec ln -s {} /usr/bin/llvm-nm  ";" \
  && find /emsdk-portable/emscripten/ -maxdepth 2 -executable -type f -name 'em*' -exec ln -s {} /usr/bin/ \; 

@@ -1,6 +1,10 @@
 
 using Test
 using ExportWebAssembly
+using MicroLogging
+
+configure_logging(min_level=:info)
+# configure_logging(min_level=:debug)
 
 sum_tuple(x) = sum((x, x, 1))
 
@@ -18,4 +22,4 @@ function test_arrays(x)
     return maximum(zz)
 end
 
-write_js("array_max.js", array_max, Tuple{Float64}, include_init = true)
+write_js("test_arrays.js", test_arrays, Tuple{Float64}, include_init = true)
