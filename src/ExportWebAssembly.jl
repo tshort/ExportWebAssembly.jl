@@ -3,7 +3,7 @@ module ExportWebAssembly
 
 export irgen, write_js, write_wasm
 
-using CodeGen 
+using CodeGen
 using LLVM
 
 
@@ -16,14 +16,14 @@ const datalayout = Dict{Symbol, String}(
     :asmjs => "e-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-p:32:32:32-v128:32:128-n32-S128"
 )
 
-function irgen(@nospecialize(fun), @nospecialize(argtypes), args...; 
-    flavor = :asmjs, 
-    optimize_lowering = true, 
-    optimize_bitcode = true, 
-    triple = triple[flavor], 
-    datalayout = datalayout[flavor], 
+function irgen(@nospecialize(fun), @nospecialize(argtypes), args...;
+    flavor = :asmjs,
+    optimize_lowering = true,
+    optimize_bitcode = true,
+    triple = triple[flavor],
+    datalayout = datalayout[flavor],
     include_init = true
-)     
+)
     ci, dt = code_typed(fun, argtypes, optimize = optimize_lowering)[1]
     names = [string(Base.function_name(fun))]
     sig = first(methods(fun, argtypes)).sig
@@ -35,7 +35,7 @@ function irgen(@nospecialize(fun), @nospecialize(argtypes), args...;
         push!(names, string(Base.function_name(args[i])))
         codegen!(cg, args[i], args[i+1])
     end
-    if include_init 
+    if include_init
         push!(names, "init_julia_")
         codegen!(cg, init_julia, Tuple{})
         codegen!(cg, sigaltstack, Tuple{Int32,Int32}) # init_julia needs this
@@ -65,28 +65,28 @@ function init_julia()
     return
 end
 
-function write_js(filename, @nospecialize(fun), @nospecialize(argtypes), args...; 
-    flavor = :asmjs, 
-    optimize_lowering = true, 
-    optimize_bitcode = true, 
-    triple = triple[flavor], 
-    datalayout = datalayout[flavor], 
+function write_js(filename, @nospecialize(fun), @nospecialize(argtypes), args...;
+    flavor = :asmjs,
+    optimize_lowering = true,
+    optimize_bitcode = true,
+    triple = triple[flavor],
+    datalayout = datalayout[flavor],
     include_init = true,
     memsize = 1073741824,
     libdir = ".",
     emcc_env = "",
     emcc_args = ""
-)    
-    mod, names = irgen(fun, argtypes, args...; 
+)
+    mod, names = irgen(fun, argtypes, args...;
                        flavor = flavor, optimize_lowering = optimize_lowering, optimize_bitcode = optimize_bitcode,
                        triple = triple, datalayout = datalayout, include_init = include_init)
     modfilename = string(filename, ".bc")
     CodeGen.write(modfilename, mod)
-    jsnames = join(["'_$x'" for x in names], ", ") 
+    jsnames = join(["'_$x'" for x in names], ", ")
     Base.run(`emcc $modfilename $libdir/libjulia.bc $libdir/libuv.bc -o $filename -s EXPORTED_FUNCTIONS="[$jsnames]" -s TOTAL_MEMORY=$memsize`)
 end
 
-write_wasm(@nospecialize(fun), @nospecialize(argtypes), args...; oargs...) =
+write_wasm(filename, @nospecialize(fun), @nospecialize(argtypes), args...; oargs...) =
     write_js(filename, fun, result_type, argtypes, args...; flavor = :wasm, emcc_args = "-s WASM=1", oargs...)
 
 
