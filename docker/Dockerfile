@@ -48,8 +48,8 @@ RUN ${L32} git checkout -b codegen-wasm-libjulia \
 WORKDIR /libjulia
 RUN mkdir usr; cp -r /julia/usr/include usr
 ADD libjulia/Makefile /libjulia/src
-COPY libjulia/Makefile.support /libjulia/src/support/Makefile \
- && libjulia/Makefile.flisp /libjulia/src/flisp/Makefile
+COPY libjulia/Makefile.support /libjulia/src/support/Makefile
+COPY libjulia/Makefile.flisp /libjulia/src/flisp/Makefile
 WORKDIR /libjulia/src/support
 RUN ${L32} make -j4
 WORKDIR /libjulia/src/flisp
