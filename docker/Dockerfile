@@ -66,8 +66,8 @@ RUN ${L32} git checkout julia-uv1.9.0
 ADD libuv/Makefile /libuv/src
 COPY libuv/Makefile.unix /libuv/src/unix/Makefile
 WORKDIR /libuv/src/unix
-ADD libuv/uv.h /libuv/include \
- && libuv/uv-unix.h /libuv/include
+ADD libuv/uv.h /libuv/include
+ADD libuv/uv-unix.h /libuv/include
 RUN ${L32} make -j4
 WORKDIR /libuv/src
 RUN ${L32} make -j4 \
