@@ -73,7 +73,8 @@ function write_js(filename, @nospecialize(fun), @nospecialize(argtypes), args...
     datalayout = datalayout[flavor],
     include_init = true,
     memsize = 1073741824,
-    libdir = ".",
+    # Default to libraries shipped with the package
+    libdir = joinpath(Pkg.dir("ExportWebAssembly"), "docker/"),
     emcc_env = "",
     emcc_args = ""
 )
