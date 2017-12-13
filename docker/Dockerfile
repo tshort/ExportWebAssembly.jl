@@ -9,18 +9,18 @@ ARG BUILD_DEPS="build-essential gfortran m4 python python-dev cmake curl git pat
 RUN ${L32} apt update && \
     ${L32} apt install -y ${BUILD_DEPS}
 
-# Get the most recent emsdk
+# Get the most recent emsdk (can squash this)
 RUN curl -sSL https://s3.amazonaws.com/mozilla-games/emscripten/releases/emsdk-portable.tar.gz -o emsdk-portable.tar.gz
-RUN tar -xzf  emsdk-portable.tar.gz 
+RUN tar -xzf  emsdk-portable.tar.gz
 
 # Set up emscripten
 WORKDIR /emsdk-portable
 RUN ./emsdk update
-RUN ./emsdk install sdk-tag-1.37.6-32bit
-RUN ./emsdk activate sdk-tag-1.37.6-32bit \
+RUN ./emsdk install sdk-tag-1.37.6-32bit \
+ && ./emsdk activate sdk-tag-1.37.6-32bit \
  && /bin/bash /emsdk-portable/emsdk_env.sh \
  && find /emsdk-portable -name "llvm-nm" -exec ln -s {} /usr/bin/llvm-nm  ";" \
- && find /emsdk-portable/emscripten/ -maxdepth 2 -executable -type f -name 'em*' -exec ln -s {} /usr/bin/ \; 
+ && find /emsdk-portable/emscripten/ -maxdepth 2 -executable -type f -name 'em*' -exec ln -s {} /usr/bin/ \;
 RUN emcc --version \
  && mkdir -p /tmp/emscripten_test && cd /tmp/emscripten_test \
  && printf '#include <iostream>\nint main(){std::cout<<"HELLO"<<std::endl;return 0;}' > test.cpp \
@@ -31,57 +31,23 @@ RUN emcc --version \
  && cd / \
  && rm -rf /tmp/*
 
-# Julia
-RUN ${L32} git clone https://github.com/JuliaLang/julia.git /julia
-WORKDIR /julia
-ADD Make.user /julia
-# ADD llvm.mk /julia/deps
-RUN ${L32} make -j4 -C deps getall
-RUN ${L32} make -j4 -C deps compile-llvm
-RUN ${L32} make -j4 -C deps compile
-RUN ${L32} make -j4  JULIA_CPU_TARGET=pentium4 MARCH=pentium4
+ # Get a 32-bit julia binary
+WORKDIR /
+RUN curl -sSL https://julialangnightlies-s3.julialang.org/bin/linux/x86/julia-latest-linux32.tar.gz -o julia-latest-linux32.tar.gz \
+ && tar -xzf julia-latest-linux32.tar.gz \
+ && find / -name 'julia-*' -depth -type d -exec mv {} /julia \; \
+ && ln -s /julia/bin/julia /usr/bin/julia
 
-# libjulia
-RUN ${L32} git checkout -b codegen-wasm-libjulia
-RUN ${L32} git checkout master
-RUN ${L32} git worktree add /libjulia codegen-wasm-libjulia
-WORKDIR /libjulia
-RUN mkdir usr; cp -r /julia/usr/include usr
-ADD libjulia/Makefile /libjulia/src
-COPY libjulia/Makefile.support /libjulia/src/support/Makefile
-COPY libjulia/Makefile.flisp /libjulia/src/flisp/Makefile
-WORKDIR /libjulia/src/support
-RUN ${L32} make -j4
-WORKDIR /libjulia/src/flisp
-RUN ${L32} make -j4
-WORKDIR /libjulia/src
-RUN ${L32} make -j4
-RUN mkdir /libs
-RUN cp libjulia.bc /libs
 
-# libuv
-RUN ${L32} git clone https://github.com/JuliaLang/libuv.git /libuv
-WORKDIR /libuv
-RUN ${L32} git checkout julia-uv1.9.0
-ADD libuv/Makefile /libuv/src
-COPY libuv/Makefile.unix /libuv/src/unix/Makefile
-WORKDIR /libuv/src/unix
-ADD libuv/uv.h /libuv/include
-ADD libuv/uv-unix.h /libuv/include
-RUN ${L32} make -j4
-WORKDIR /libuv/src
-RUN ${L32} make -j4
-RUN cp libuv.bc /libs
 
-# ExportWebAssembly.jl
+# # ExportWebAssembly.jl
 WORKDIR /
 ENV PATH="/julia/usr/bin:/julia/usr/tools:/emsdk-portable/emscripten/tag-1.37.6:${PATH}"
-RUN EXTRA_CXXFLAGS="-march=pentium4" julia -e "Pkg.add(\"LLVM\"); using LLVM"
-RUN julia -e "Pkg.add(\"MicroLogging\")"
-RUN julia -e "Pkg.clone(\"https://github.com/tshort/CodeGen.jl.git\")"
-RUN julia -e "Pkg.clone(\"https://github.com/tshort/ExportWebAssembly.jl.git\")"
-RUN julia -e "Pkg.checkout(\"ExportWebAssembly\", \"codegen-jl\")"
-RUN julia -e "using ExportWebAssembly"
+RUN EXTRA_CXXFLAGS="-march=pentium4" julia -e "Pkg.add(\"LLVM\"); using LLVM" \
+ && julia -e "Pkg.add(\"MicroLogging\")" \
+ && julia -e "Pkg.clone(\"https://github.com/tshort/CodeGen.jl.git\")" \
+ && julia -e "Pkg.clone(\"https://github.com/tshort/ExportWebAssembly.jl.git\")" \
+ && julia -e "Pkg.checkout(\"ExportWebAssembly\", \"codegen-jl\")" \
+ && julia -e "using ExportWebAssembly"
 
 WORKDIR /work
-
