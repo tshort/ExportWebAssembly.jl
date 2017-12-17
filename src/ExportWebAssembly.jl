@@ -27,7 +27,7 @@ function irgen(@nospecialize(fun), @nospecialize(argtypes), args...;
     ci, dt = code_typed(fun, argtypes, optimize = optimize_lowering)[1]
     names = [string(Base.function_name(fun))]
     sig = first(methods(fun, argtypes)).sig
-    cg = CodeGen.CodeCtx(names[1], ci, dt, argtypes, sig, triple = triple, datalayout = datalayout)
+    cg = CodeGen.CodeCtx(names[1], ci, dt, argtypes, fun, sig, triple = triple, datalayout = datalayout)
     m = codegen!(cg)
     n = length(args)
     assert(iseven(n))
