@@ -45,6 +45,7 @@ WORKDIR /
 ENV PATH="/julia/usr/bin:/julia/usr/tools:/emsdk-portable/emscripten/tag-1.37.6:${PATH}"
 RUN EXTRA_CXXFLAGS="-march=pentium4" julia -e "Pkg.add(\"LLVM\"); using LLVM" \
  && julia -e "Pkg.add(\"MicroLogging\")" \
+ && julia -e "Pkg.checkout(\"MicroLogging\")" \
  && julia -e "Pkg.clone(\"https://github.com/tshort/CodeGen.jl.git\")" \
  && julia -e "Pkg.clone(\"https://github.com/tshort/ExportWebAssembly.jl.git\")" \
  && julia -e "Pkg.checkout(\"ExportWebAssembly\", \"codegen-jl\")" \
