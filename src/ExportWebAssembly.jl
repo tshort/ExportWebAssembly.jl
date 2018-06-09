@@ -28,7 +28,7 @@ function raise_exception(insblock::BasicBlock, ex::Value)
 end
 
 
-function irgen(@nospecialize(func), @nospecialize(tt))
+function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
     # get the method instance
     isa(func, Core.Builtin) && error("function is not a generic function")
     world = typemax(UInt)
@@ -137,7 +137,7 @@ function irgen(@nospecialize(func), @nospecialize(tt))
     # so forcibly inline every function definition into the entry point
     # and internalize all other functions (enabling ABI-breaking optimizations).
     # FIXME: this is too coarse. use a proper inliner tuned for GPUs
-    ModulePassManager() do pm
+    optimize && ModulePassManager() do pm
         no_inline = EnumAttribute("noinline", 0, jlctx[])
         always_inline = EnumAttribute("alwaysinline", 0, jlctx[])
         for f in filter(f->f!=entry && !isdeclaration(f), collect(functions(mod)))
@@ -151,7 +151,7 @@ function irgen(@nospecialize(func), @nospecialize(tt))
         run!(pm, mod)
     end
 
-    ModulePassManager() do pm
+    optimize && ModulePassManager() do pm
         add_library_info!(pm, triple(mod))
         add_transform_info!(pm, tm)
         ccall(:jl_add_optimization_passes, Cvoid,
@@ -174,11 +174,13 @@ end
 
 
 """
-    export_bitcode(filename, func, tt)
+    export_bitcode(filename, func, tt; optimize = true)
 
 Export function `func` to LLVM bitcode in `filename`. 
 Specify the argument types as a Tuple{} in the `tt` argument.
 The bitcode is in WebAssembly-compatible format that can be converted to WebAssembly with Emscripten.
+Apply optimizations based on the optional `optimize` argument.
+
 
 Example: 
 ```
@@ -186,8 +188,8 @@ myfun(x) = sum((x, x, 1.0))
 export_bitcode("myfun.bc", myfun, Tuple{Float64})
 ```
 """
-function export_bitcode(filename, @nospecialize(func), tt)
-    mod = irgen(func, tt)
+function export_bitcode(filename, @nospecialize(func), tt; optimize = true)
+    mod = irgen(func, tt, optimize = optimize)
     bitcode = convert(Vector{UInt8}, mod)
     open(filename, "w") do io 
         write(io, bitcode)
