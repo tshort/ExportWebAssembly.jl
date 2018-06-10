@@ -24,3 +24,12 @@ I have explored several approaches to generate WebAssembly. The two most promisi
 2. **[CodeGen.jl](https://github.com/tshort/CodeGen.jl) approach** – The [codegen-jl branch](https://github.com/tshort/ExportWebAssembly.jl/tree/codegen-jl) of this repository uses this approach. The CodeGen package uses the [LLVM package](https://github.com/maleadt/LLVM.jl) to directly generate bitcode based on code_typed Julia code. This can use libjulia functions (also compiled to LLVM bitcode), so a wider range of Julia code may work. Some decently complex code runs, including some simple array creation and manipulation. But, there are still many gaps that need to be filled in here to be able to run Julia code in general. The main work with this approach is in upgrading the CodeGen package to support more Julia code. This method offers the most control over code generation and may allow the widest Julia code coverage (including code that links to C and Fortran libraries). It may also be wise to swap out libjulia methods with WebAssembly-focused versions. This could limit code size and allow easier integration.
 
 Both of these approaches are on hold (as of March 2018) pending updates to Julia v0.7/1.0. These has been a lot of change in Julia related to the internal representation (IR) and how to access code generation. LLVM may also be upgraded as part of the transition to v1.0. These issues should be settled within a month.
+
+
+Extras to help compile to wasm and see wast:
+
+```
+llc -o this.o -filetype obj this.bc
+lld -flavor wasm -o this.wasm --no-entry --allow-undefined this.o
+wasm2wast this.wasm
+```
