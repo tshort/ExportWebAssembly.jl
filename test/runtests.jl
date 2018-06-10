@@ -1,5 +1,5 @@
 
-using Base.Test
+using Test
 using ExportWebAssembly
 
 myfun(x) = sum((x, x, 1.0))
