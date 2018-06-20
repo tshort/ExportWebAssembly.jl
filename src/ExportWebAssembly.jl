@@ -1,7 +1,7 @@
 
 module ExportWebAssembly
 
-export irgen, export_bitcode
+export irgen, export_bitcode, @extern
 
 using LLVM
 
@@ -194,6 +194,36 @@ function export_bitcode(filename, @nospecialize(func), tt; optimize = true)
     open(filename, "w") do io 
         write(io, bitcode)
     end
+end
+
+jltype(x::Symbol) = eval(x)
+llvmtype(x) = LLVMType(ccall(:julia_type_to_llvm, LLVM.API.LLVMTypeRef, (Any, Bool), x, false))
+llvmtype(x::Symbol) = llvmtype(jltype(x))
+
+"""
+    @extern(fun, returntype, argtypes, args...)
+
+Creates a call to an external function meant to be defined at link time. 
+    
+The symbol `fun` is the external function with a return type `returntype` 
+and arguments given as a tuple type given by `argtypes`.
+
+Note that the types must be base types handled by LLVM (mainly bits types). 
+Julia boxed types cannot be used. This includes arrays.
+
+Note that arguments are not autoconverted to the proper type like `ccall`.
+"""
+macro extern(funname, returntype, argtypes, args...)
+    funname = funname.value
+    llvmreturntype = llvmtype(returntype)
+    llvmargtypes = llvmtype.(tuple(argtypes.args[2:end]...))
+    llvmargs = join(("$a %$(idx-1)" for (idx, a) in enumerate(llvmargtypes)), ", ")
+    declarationstr = "declare $llvmreturntype @$funname$llvmargtypes"
+    runstr = """
+        %ret = call $llvmreturntype @$funname($llvmargs)
+        ret $llvmreturntype %ret
+        """
+    esc(Expr(:call, Base.llvmcall, (declarationstr, runstr), returntype, Tuple{jltype.(argtypes.args[2:end])...}, args...))
 end
 
 end # module
