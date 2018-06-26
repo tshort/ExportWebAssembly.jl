@@ -69,7 +69,7 @@ end
 @show myfun(4)
 
 using ExportWebAssembly
-export_bitcode("myfun.bc", myfun, Tuple{Int32})
+write_bitcode("myfun.bc", myfun, Tuple{Int32})
 
 ## In shell:
 # emcc myfun.bc -o myfun.js -s LINKABLE=1 -s EXPORT_ALL=1

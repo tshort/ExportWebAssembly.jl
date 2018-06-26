@@ -8,14 +8,13 @@ Example:
 
 ```julia
 myfun(x) = sum((x, x, 1.0))
-
-export_bitcode("myfun.bc", myfun, Tuple{Float64})
+irgen(myfun, Tuple{Float64}))           # look at the LLVM IR generated
+write_wasm("myfun.wasm", myfun, Tuple{Float64})
+wasm2wast("myfun.wasm")                 # look at the textual representation
 ```
-This generates an LLVM bitcode file in WebAssembly format that can be converted with Emscripten/Binaryen to WebAssembly.
+This generates a WebAssembly file. The conversion to a binary WASM file uses LLVM's `llc` and `lld`.
 
-Note that there's nothing in place (yet) to actually convert to WebAssembly.
-
-[WebAssembly](http://webassembly.org/) is a new standard for running compiled code in a web browser. If Julia can generate WebAssembly, it opens up many opportunities to embed Julia "apps" in web interfaces. Julia is well positioned here because Julia can already compile efficient LLVM bitcode. LLVM bitcode can be translated into WebAssembly by [Emscripten](http://emscripten.org/) or with a direct LLVM [backend](https://github.com/llvm-mirror/llvm/tree/master/lib/Target/WebAssembly).
+[WebAssembly](http://webassembly.org/) is a new standard for running compiled code in a web browser. If Julia can generate WebAssembly, it opens up many opportunities to embed Julia "apps" in web interfaces. Julia is well positioned here because Julia can already compile efficient LLVM bitcode. 
 
 I have explored several approaches to generate WebAssembly. The two most promising approaches to generate WebAssembly are outlined as follows.
 
@@ -25,11 +24,4 @@ I have explored several approaches to generate WebAssembly. The two most promisi
 
 Both of these approaches are on hold (as of March 2018) pending updates to Julia v0.7/1.0. These has been a lot of change in Julia related to the internal representation (IR) and how to access code generation. LLVM may also be upgraded as part of the transition to v1.0.
 
-
-Here's an approach to compile to wasm and see wast:
-
-```
-llc -o myfun.o -filetype obj myfun.bc
-lld -flavor wasm -o myfun.wasm --no-entry --allow-undefined --no-threads myfun.o
-wasm2wast myfun.wasm
-```
+Right now, this repo only works with Julia v0.7dev master.
