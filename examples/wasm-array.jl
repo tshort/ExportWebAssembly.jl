@@ -4,8 +4,8 @@ import ExportWebAssembly
 export WVector, S_str
 using LLVM
 using LLVM.Interop
-
-grow_memory(x) = Base.llvmcall(
+    
+grow_memory(x) = Base.llvmcall(     # Not used
     ("declare i8* @llvm.wasm.grow.memory.i32(i32)",
       """
       %2 = tail call i8* @llvm.wasm.grow.memory.i32(i32 %0)
@@ -59,10 +59,10 @@ end
 
 @inline function Base.getindex(x::WVector{T}, i::Integer) where {T}
     # @assert 0 < i <= x.len
-    unsafe_load(x.ptr, Int32(i))
+    myunsafe_load(x.ptr, Int32(i))
 end
 
-@generated function Base.unsafe_load(p::Ptr32{T}, i::Int32) where {T}
+@generated function myunsafe_load(p::Ptr32{T}, i::Int32) where {T}
     lt = ExportWebAssembly.llvmtype(T)
     runstr = """
         %pa = inttoptr i32 %0 to $lt*
@@ -71,7 +71,7 @@ end
         ret $lt %ret
         """
     quote
-        Base.llvmcall($runstr, $T, Tuple{Int32, Int32}, p.address, Int32(i - 1))
+        Base.llvmcall($runstr, $T, Tuple{Int32, Int32}, p.address, i - Int32(1))
     end
 end
 # function unsafe_load(p::Ptr32{Float64}, i::Int32)
@@ -193,63 +193,23 @@ using .WASMVector
 
 using ExportWebAssembly
 
-function myfun(p, i)
-    z = WASMVector.S"hello"
-    x = WVector{UInt8}(z, i)
-    x[2] = UInt8(3)
-    x[Int(i)] - x[2]
-    # sum(x)
+function myfun(p)
+    x = WVector{Float64}(p, 4)
+    x[1] + x[2]
 end
 
-@code_warntype myfun(Int32(1), Int32(2))
-# irgen(myfun, Tuple{Int32,Int32}, optimize = false)
-irgen(myfun, Tuple{Int32,Int32}, optimize = true)
-export_bitcode("myfun.bc", myfun, Tuple{Int32, Int32})
-run(`llc myfun.bc -filetype obj -o myfun.o`)
-run(`lld -flavor wasm myfun.o --no-entry --allow-undefined -o myfun.wasm`)
-run(`wasm2wast myfun.wasm`)
+@code_warntype myfun(Int32(1))
+irgen(myfun, Tuple{Int32}, optimize = true)
+write_wasm("myfun.wasm", myfun, Tuple{Int32})
+wasm2wast("myfun.wasm")
+ 
+function myfun2(i)
+    x = WVector{Int8}(WASMVector.S"hello", 6)
+    x[i]
+end
 
-# function myfun(i)
-#     x = WVector{Int8}(WASMVector.S"hello", Int32(6))
-#     x[i]
-#     # x = WASMVector.S"hello"
-#     # x[i]
-#     # sum(x)
-# end
+@code_warntype myfun2(Int32(1))
+irgen(myfun2, Tuple{Int32}, optimize = true)
+write_wasm("myfun2.wasm", myfun2, Tuple{Int32})
+wasm2wast("myfun2.wasm")
 
-# macroexpand(:(WASMVector.@S_str("hello")))
-
-# InteractiveUtils.@code_llvm_raw myfun(Int32(1), Int32(3))
-# @code_warntype myfun(Int32(1))
-# irgen(myfun, Tuple{Int32}, optimize = false)
-# irgen(myfun, Tuple{Int32})
-# export_bitcode("myfun.bc", myfun, Tuple{Int32})
-# run(`llc myfun.bc -filetype obj -o myfun.o`)
-# run(`lld -flavor wasm myfun.o --no-entry --allow-undefined -o myfun.wasm`)
-# run(`wasm2wast myfun.wasm`)
-
-# using LLVM
-# using LLVM.Interop
-# @generated function myfun(i)
-#     T_int = LLVM.IntType(sizeof(Int)*8, JuliaContext())
-#     T_int8 = LLVM.IntType(8, JuliaContext())
-#     llvmf, _ = create_function(T_int8, [T_int])
-#     # generate IR
-#     Builder(JuliaContext()) do builder
-#         entry = BasicBlock(llvmf, "entry", JuliaContext())
-#         position!(builder, entry)
-#         s = globalstring!(builder, "foobar")
-#         p = gep!(builder, s, [LLVM.ConstantInt(T_int, 0), parameters(llvmf)[1]])
-#         val = load!(builder, bitcast!(builder, p, LLVM.PointerType(T_int8)))
-#         ret!(builder, val)
-#         # ret!(builder, parameters(llvmf)[1])
-#     end
-#     call_function(llvmf, Int8, Tuple{Int}, :((i,)))
-# end
-# # myfun(1)
-# irgen(myfun, Tuple{Int}, optimize = false)
-# irgen(myfun, Tuple{Int}, optimize = true)
-# export_bitcode("myfun.bc", myfun, Tuple{})
-# run(`llc myfun.bc -filetype obj -o myfun.o`)
-# run(`lld -flavor wasm myfun.o --no-entry --allow-undefined -o myfun.wasm`)
-# run(`wasm2wast myfun.wasm`)
