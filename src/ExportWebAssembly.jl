@@ -110,6 +110,8 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
         fs[1]
     end
 
+    LLVM.name!(entry, string(nameof(func)))
+
     # link in dependent modules
     link!.(Ref(mod), dependencies)
 
@@ -197,7 +199,8 @@ macro extern(funname, returntype, argtypes, args...)
     llvmreturntype = llvmtype(returntype)
     llvmargtypes = llvmtype.(tuple(argtypes.args[2:end]...))
     llvmargs = join(("$a %$(idx-1)" for (idx, a) in enumerate(llvmargtypes)), ", ")
-    declarationstr = "declare $llvmreturntype @$funname$llvmargtypes"
+    llvmargtypes = join(llvmargtypes, ", ")
+    declarationstr = "declare $llvmreturntype @$funname($llvmargtypes)"
     runstr = """
         %ret = call $llvmreturntype @$funname($llvmargs)
         ret $llvmreturntype %ret
