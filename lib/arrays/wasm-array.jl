@@ -1,29 +1,16 @@
 module WASMVector
 
 import ExportWebAssembly
-export WVector, S_str
+export WVector, S_str, asvec
 using LLVM
 using LLVM.Interop
     
-grow_memory(x) = Base.llvmcall(     # Not used
-    ("declare i8* @llvm.wasm.grow.memory.i32(i32)",
-      """
-      %2 = tail call i8* @llvm.wasm.grow.memory.i32(i32 %0)
-      ret i8* %2
-      """), 
-    Ptr{Int8}, Tuple{Int32}, x)
-
-
 struct Ptr32{T}
     address::Int32
 end
 
-mutable struct Memory
-    base::Int32
-    nextopen::Int32
-end
-Memory(x) = Memory(x, x)
-const MEM = Memory(Int32(0))
+@inline malloc(len) = ExportWebAssembly.@extern(:malloc, Int32, Tuple{Int32}, Int32(len))
+
 
 struct WVector{T} <: AbstractVector{T}
     ptr::Ptr32{T}
@@ -32,24 +19,27 @@ struct WVector{T} <: AbstractVector{T}
 end
 WVector{T}(ptr::Ptr32{T}, len::Integer) where {T} = WVector{T}(ptr, Int32(len), Int32(len))
 WVector{T}(addr::Int32, len::Integer) where {T} = WVector{T}(Ptr32{T}(addr), len)
-function WVector{T}(len::Integer) where {T}
-    multiplier = 4
+WVector{T}(addr::Int32, len::Integer, maxlen::Integer) where {T} = WVector{T}(Ptr32{T}(addr), len, maxlen)
+
+@inline function WVector{T}(len::Int32) where {T}
+    #addr = malloc(27)
+    #WVector{T}(addr, Int32(27))
+    multiplier = Int32(4)
     maxlen = multiplier * len
-    nbytes = sizeof(T)
-    ptr = Ptr32{T}(MEM.nextopen)
-    MEM.nextopen += nbytes * maxlen
-    WVector{T}(ptr, len, maxlen)
+    nbytes = Int32(sizeof(T))
+    addr = malloc(nbytes * multiplier)
+    WVector{T}(addr, len, len * multiplier)
 end
 
-function WVector(args...)
-    n = length(args)
-    T = promote_type(typeof.(args)...)
-    res = WVector{T}(n)
-    for i in 1:n
-        res[i] = args[i]
-    end
-    res
-end
+#function WVector(args...)
+#    n = length(args)
+#    T = promote_type(typeof.(args)...)
+#    res = WVector{T}(n)
+#    for i in 1:n
+#        res[i] = args[i]
+#    end
+#    res
+#end
 
 # function WVector(x::Vector{T}) where {T}
 #     res = WVector{T}(length(x))
@@ -111,6 +101,12 @@ Base.IndexStyle(::Type{T}) where T <: WVector = IndexLinear()
 
 Base.similar(A::WVector{T}, ::Type{T}, dims::Dims) where {T} =
     WVector{T}(dims[1])
+
+# Array with AssemblyScript layout for use with wasm-ffi
+function asvec(T, addr)
+    x = WVector{Int32}(addr, Int32(4))
+    WVector{T}(addr + Int32(16), x[3] ÷ Int32(sizeof(T)))
+end
 
 macro S_str(s)
     T_i32 = LLVM.IntType(32, JuliaContext())
@@ -189,27 +185,5 @@ end # module
 
 # end
 
-using .WASMVector
 
-using ExportWebAssembly
-
-function myfun(p)
-    x = WVector{Float64}(p, 4)
-    x[1] + x[2]
-end
-
-@code_warntype myfun(Int32(1))
-irgen(myfun, Tuple{Int32}, optimize = true)
-write_wasm("myfun.wasm", myfun, Tuple{Int32})
-wasm2wast("myfun.wasm")
- 
-function myfun2(i)
-    x = WVector{Int8}(WASMVector.S"hello", 6)
-    x[i]
-end
-
-@code_warntype myfun2(Int32(1))
-irgen(myfun2, Tuple{Int32}, optimize = true)
-write_wasm("myfun2.wasm", myfun2, Tuple{Int32})
-wasm2wast("myfun2.wasm")
 
