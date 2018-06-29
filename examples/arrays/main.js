@@ -26,10 +26,13 @@ library.fetch('./main.wasm').then(() => {
     console.log(this);
     console.log(library);
   for (var a = [], i =0; i < 20; ++i) a[i] = i;
+    console.log(1);
 
   arr = new Float32Array(a);
+    console.log(2);
 
   res = library.arrsum(arr);
+    console.log(3);
   console.log(res)
 
 });

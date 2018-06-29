@@ -1,7 +1,20 @@
 #include <stddef.h> /* size_t */
- __attribute__((__weak__, __visibility__("default")))
+
+const int pagesize = 65536;
+int memptr = pagesize;   // leave some room for builtin data sections
+
+__attribute__((__weak__, __visibility__("default")))
 size_t sbrk(size_t delta) {
-    return __builtin_wasm_grow_memory(delta);
+    int maxmem = __builtin_wasm_current_memory() * pagesize - 1;
+    int oldmemptr = memptr;
+    if (memptr + delta > maxmem) {
+        int npages = __builtin_wasm_grow_memory(((memptr + delta - maxmem) / pagesize) + 1);
+        if (npages == 0) {
+            return -1;
+        }
+    }
+    memptr += delta;
+    return oldmemptr;
 }
 // http://clc-wiki.net/wiki/memcpy  -- public domain
 void *memcpy(void *dest, const void *src, size_t n)
