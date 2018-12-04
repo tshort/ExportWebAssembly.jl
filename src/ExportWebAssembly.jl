@@ -1,7 +1,7 @@
 
 module ExportWebAssembly
 
-export irgen, export_bitcode, @extern
+export irgen, write_bitcode, @extern
 
 using LLVM
 
@@ -70,7 +70,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
                     (Any, UInt, Bool, Bool, Base.CodegenParams),
                     linfo, world, #=wrapper=#false, #=optimize=#false, params)
         if ref == C_NULL
-            error(ctx, "the Julia compiler could not generate LLVM IR")
+            error(jlctx[], "the Julia compiler could not generate LLVM IR")
         end
 
         llvmf = LLVM.Function(ref)
@@ -110,6 +110,8 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
         fs[1]
     end
 
+    LLVM.name!(entry, string(nameof(func)))
+
     # link in dependent modules
     link!.(Ref(mod), dependencies)
 
@@ -130,8 +132,10 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
         end
     end
 
-    # tm = machine(ctx.cap, triple(mod))
-    tm = TargetMachine(Target("i686-pc-linux-gnu"), "i686-pc-linux-gnu")
+    # tm = machine(jlctx[].cap, triple(mod))
+    triple = "wasm32-unknown-unknown-wasm"
+    triple = "x86_64-unknown-linux-gnu"
+    tm = TargetMachine(Target(triple), triple)
 
     # GPU code is _very_ sensitive to register pressure and local memory usage,
     # so forcibly inline every function definition into the entry point
@@ -152,7 +156,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
     end
 
     optimize && ModulePassManager() do pm
-        add_library_info!(pm, triple(mod))
+        # add_library_info!(pm, triple(mod))
         add_transform_info!(pm, tm)
         ccall(:jl_add_optimization_passes, Cvoid,
               (LLVM.API.LLVMPassManagerRef, Cint),
@@ -172,29 +176,6 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
     return mod
 end
 
-
-"""
-    export_bitcode(filename, func, tt; optimize = true)
-
-Export function `func` to LLVM bitcode in `filename`. 
-Specify the argument types as a Tuple{} in the `tt` argument.
-The bitcode is in WebAssembly-compatible format that can be converted to WebAssembly with Emscripten.
-Apply optimizations based on the optional `optimize` argument.
-
-
-Example: 
-```
-myfun(x) = sum((x, x, 1.0))
-export_bitcode("myfun.bc", myfun, Tuple{Float64})
-```
-"""
-function export_bitcode(filename, @nospecialize(func), tt; optimize = true)
-    mod = irgen(func, tt, optimize = optimize)
-    bitcode = convert(Vector{UInt8}, mod)
-    open(filename, "w") do io 
-        write(io, bitcode)
-    end
-end
 
 jltype(x::Symbol) = eval(x)
 llvmtype(x) = LLVMType(ccall(:julia_type_to_llvm, LLVM.API.LLVMTypeRef, (Any, Bool), x, false))
@@ -218,12 +199,18 @@ macro extern(funname, returntype, argtypes, args...)
     llvmreturntype = llvmtype(returntype)
     llvmargtypes = llvmtype.(tuple(argtypes.args[2:end]...))
     llvmargs = join(("$a %$(idx-1)" for (idx, a) in enumerate(llvmargtypes)), ", ")
-    declarationstr = "declare $llvmreturntype @$funname$llvmargtypes"
+    llvmargtypes = join(llvmargtypes, ", ")
+    declarationstr = "declare $llvmreturntype @$funname($llvmargtypes)"
     runstr = """
         %ret = call $llvmreturntype @$funname($llvmargs)
         ret $llvmreturntype %ret
         """
     esc(Expr(:call, Base.llvmcall, (declarationstr, runstr), returntype, Tuple{jltype.(argtypes.args[2:end])...}, args...))
 end
+
+module Utils
+    include("../deps/deps.jl")
+end
+include("io.jl")
 
 end # module
