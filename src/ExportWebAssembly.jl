@@ -56,9 +56,9 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
         push!(dependencies, LLVM.Module(ref))
     end
     params = Base.CodegenParams(cached=false,
-                                track_allocations=false,
+                                track_allocations=true,
                                 code_coverage=false,
-                                static_alloc=false,
+                                static_alloc=true,
                                 prefer_specsig=true,
                                 module_setup=hook_module_setup,
                                 module_activation=hook_module_activation,

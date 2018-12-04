@@ -24,4 +24,4 @@ I have explored several approaches to generate WebAssembly. The two most promisi
 
 Both of these approaches are on hold (as of March 2018) pending updates to Julia v0.7/1.0. These has been a lot of change in Julia related to the internal representation (IR) and how to access code generation. LLVM may also be upgraded as part of the transition to v1.0.
 
-Right now, this repo only works with Julia v0.7dev master.
+Right now, this repo only works with Julia v0.7 or v1.0.
