@@ -1,10 +1,12 @@
 
 """
-Returns a `Dict` mapping function address to symbol name for all `GlobalRef`s
+    find_globals(f, tt)
+
+Returns a `Dict` mapping function address to object for all `GlobalRef`s
 referenced from the function. This descends into other invocations
 within the function.
 
-Note: this will also return MethodInstances.
+Note: this will also include MethodInstances.
 """
 find_globals(@nospecialize(f), @nospecialize(tt)) = find_globals(reflect(f, tt))
 
@@ -33,7 +35,21 @@ function find_globals(ref::Reflection)
     return result
 end
 
+"""
+    fix_globals!(mod::LLVM.Module, d)
 
+Replace function addresses in `mod` with references to global data structures.
+`d` is a `Dict` mapping a function address to a Julia global object.
+For each global variable, two LLVM global objects are created:
+
+* `jl.global.data` -- An LLVM 'i8' vector holding a serialized version of the Julia object.
+* `jl.global` -- A pointer to the unserialized Julia object.
+
+The `inttopt` with the function address is replaced by `jl.global`.
+
+A function `jl_init_globals` is added to `mod`. This function deserializes the data in 
+`jl.global.data` and updates `jl.global`.
+"""
 function fix_globals!(mod::LLVM.Module, d)
     # Create a `jl_init_globals` function.
     jl_init_globals_func = LLVM.Function(mod, "jl_init_globals",

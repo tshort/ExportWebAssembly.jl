@@ -1,8 +1,10 @@
 
 """
-Returns a `Dict` mapping function address to symbol name for all `ccall`s and
-`cglobal`s called from the function. This descends into other invocations
-within the function.
+    find_ccalls(f, tt)
+
+Returns a `Dict` mapping function addresses to symbol names for all `ccall`s and
+`cglobal`s called from the method. This descends into other invocations
+within the method.
 """
 find_ccalls(@nospecialize(f), @nospecialize(tt)) = find_ccalls(reflect(f, tt))
 
@@ -34,6 +36,13 @@ getsym(x::QuoteNode) = x
 getsym(x::Expr) = eval.((x.args[2], x.args[3]))
 
 
+"""
+    fix_ccalls!(mod::LLVM.Module, d)
+
+Replace function addresses with symbol names in `mod`. The symbol names are 
+meant to be linked to `libjulia` or other libraries.
+`d` is a `Dict` mapping a function address to symbol name for `ccall`s.
+"""
 function fix_ccalls!(mod::LLVM.Module, d)
     changed = false
     for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)

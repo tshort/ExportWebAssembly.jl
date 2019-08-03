@@ -14,8 +14,21 @@ SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Dict(
 """
     serialize(ctx::SerializeContext, x)
 
-Serialize `x` into the context object `ctx`.
-Get the result with `take!(ctx.io)`.
+Serialize `x` into the context object `ctx`. `ctx.io` is the `IOBuffer` where the 
+serialized results are stored. Get the result with `take!(ctx.io)`.
+
+This function returns an expression that will deserialize the object. Several `serialize`
+methods can be called recursively to build up deserialization code for nested objects.
+The expression returned is meant to be `eval`ed into a function that can be called
+to do the serialization.
+
+The deserialization code should be pretty low-level code that can be compiled
+relatively easily. It especially shouldn't use global variables.
+
+Serialization / deserialization code can use `ctx` to hold state information. 
+
+Some simple types like boxed variables do not need to write anything to `ctx.io`. 
+They can return an expression that directly creates the object.
 """
 function serialize(ctx::SerializeContext, @nospecialize(x))
     # TODO: fix this major kludge.
