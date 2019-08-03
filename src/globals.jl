@@ -1,3 +1,7 @@
+struct GlobalsContext
+    invokes::Set{Any}
+end
+GlobalsContext() = GlobalsContext(Set())
 
 """
     find_globals(f, tt)
@@ -8,9 +12,9 @@ within the function.
 
 Note: this will also include MethodInstances.
 """
-find_globals(@nospecialize(f), @nospecialize(tt)) = find_globals(reflect(f, tt))
+find_globals(@nospecialize(f), @nospecialize(tt)) = find_globals(GlobalsContext(), reflect(f, tt))
 
-function find_globals(ref::Reflection)
+function find_globals(ctx::GlobalsContext, ref::Reflection)
     result = Dict{Ptr{Nothing}, Any}()
     globals = filter(c -> lookthrough(c -> any(x -> !isimmutable(x) || x isa GlobalRef, c.args), c), 
                      ref.CI.code)
@@ -30,7 +34,9 @@ function find_globals(ref::Reflection)
     invokes = map((arg) -> process_invoke(DefaultConsumer(), ref, arg...), invokes)
     for fi in invokes
         canreflect(fi) || continue
-        merge!(result, find_globals(reflect(fi)))
+        fi in ctx.invokes && continue
+        push!(ctx.invokes, fi)
+        merge!(result, find_globals(ctx, reflect(fi)))
     end
     return result
 end
