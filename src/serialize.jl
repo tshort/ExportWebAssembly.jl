@@ -64,6 +64,10 @@ function serialize(ctx::SerializeContext, a::Tuple)
     Expr(:tuple, (serialize(ctx, x) for x in a)...)
 end
 
+function serialize(ctx::SerializeContext, a::Core.SimpleVector)
+    Expr(:call, Expr(:., :Core, QuoteNode(:svec)), (serialize(ctx, x) for x in a)...)
+end
+
 advance!(io) = write(io, repeat('\0', -rem(io.ptr - 1, 8, RoundUp)))  # Align data to 8 bytes
 
 function serialize(ctx::SerializeContext, a::Array)
