@@ -6,8 +6,8 @@ result.
 """
 struct SerializeContext
     io::IOBuffer
+    symbols::Dict{Any,Any}
     types::Dict{Any,Any}
-    tuples::Dict{Any,Any}
 end
 SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Dict())
 
@@ -50,8 +50,11 @@ function serialize(ctx::SerializeContext, x::String)
 end
 
 function serialize(ctx::SerializeContext, x::Symbol)
-    # haskey(ctx.symbols) && return ctx.symbols[x]
-    Expr(:call, :Symbol, serialize(ctx, string(x)))
+    haskey(ctx.symbols, x) && return ctx.symbols[x]
+    name = gensym(:symbol)
+    ctx.symbols[x] = name
+    res = Expr(:global, Expr(:(=), name, Expr(:call, :Symbol, serialize(ctx, string(x)))))
+    res
 end
 
 
@@ -90,7 +93,7 @@ function serialize(ctx::SerializeContext, a::Array)
         end
     else
         idx = Int[]
-        e = fill(:(), length(a))
+	e = Array{Any}(undef, length(a))
         @inbounds for i in eachindex(a)
             if isassigned(a, i)
                 e[i] = serialize(ctx, a[i])
