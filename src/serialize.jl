@@ -49,6 +49,13 @@ function serialize(ctx::SerializeContext, x::String)
     end
 end
 
+function serialize(ctx::SerializeContext, x::Symbol)
+    # haskey(ctx.symbols) && return ctx.symbols[x]
+    Expr(:call, :Symbol, serialize(ctx, string(x)))
+end
+
+
+
 # Define functions that return an expression. Example:
 #    serialize(ctx::SerializeContext, x::Int) = :(ccall(:jl_box_int64, Any, (Int,), $x))
 for (fun, type) in (:jl_box_int64 => Int64,     :jl_box_int32 => Int32,    :jl_box_int8 => Int16,    :jl_box_int8 => Int8,
