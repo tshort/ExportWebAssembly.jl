@@ -37,6 +37,39 @@ function serialize(ctx::SerializeContext, @nospecialize(x))
     end
 end
 
+function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
+    if haskey(ctx.types, t)
+        return ctx.types[t]
+    else
+        primary = unwrap_unionall(t.wrapper)
+        exp = quote
+            tn    = $(serialize(ctx, t.name))
+            names = $(serialize(ctx, t.names))
+            super = $(serialize(ctx, primary.s)uper)
+            parameters = $(serialize(ctx, primary.parameters))
+            types = $(serialize(ctx, primary.types))
+            ndt = ccall(:jl_new_datatype, Any, (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
+                        tn, tn.module, super, parameters, names, types,
+		                $(primary.abstract), $(primary.mutabl), $(primary.ninitialized))
+            tn.wrapper = ndt.name.wrapper
+            ccall(:jl_set_const, Cvoid, (Any, Any, Any), tn.module, tn.name, tn.wrapper)
+            ty = tn.wrapper
+            hasinstance = serialize(ctx, )
+            $(if isdefined(primary, :instance) && !isdefined(t, :instance)
+                # use setfield! directly to avoid `fieldtype` lowering expecting to see a Singleton object already on ty
+                :(Core.setfield!(ty, :instance, ccall(:jl_new_struct, Any, (Any, Any...), ty)))
+            end)
+        end
+    end
+end
+
+function serialize(ctx::SerializeContext, tn::Core.TypeName)
+    quote
+        ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
+              $(serialize(ctx, tn.name)), cglobal(:jl_main_module, Any)  #=__deserialized_types__ =# )
+    end
+end
+
 function serialize(ctx::SerializeContext, x::String)
     advance!(ctx.io)
     v = Vector{UInt8}(x)
@@ -55,6 +88,14 @@ function serialize(ctx::SerializeContext, x::Symbol)
     ctx.symbols[x] = name
     res = Expr(:global, Expr(:(=), name, Expr(:call, :Symbol, serialize(ctx, string(x)))))
     res
+end
+function serialize(ctx::SerializeContext, x::Symbol)
+    haskey(ctx.symbols, x) && return ctx.symbols[x]
+    name = gensym(:symbol)
+    ctx.symbols[x] = name
+    quote
+        ccall(:jl_set_global, Cvoid, (Any, Any, Any), unsafe_load(cglobal(:jl_main_module, Any)), $(QuoteNode(name)), $(serialize(ctx, string(x))))
+    end
 end
 
 

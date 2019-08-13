@@ -78,7 +78,7 @@ function fix_globals!(mod::LLVM.Module, d)
                         obj = d[ptr]
                         position!(builder, instr)
                         ctx = SerializeContext()
-                        e = serialize(ctx, obj)
+                        @show e = serialize(ctx, obj)
                         deserialize_funs[ptr] = eval(:($(Symbol(:deserialize_global_, UInt(ptr)))(Vptr) = $e))
                         v = take!(ctx.io)
 			gv_typ = LLVM.ArrayType(uint8_t, length(v))

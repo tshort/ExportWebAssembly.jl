@@ -50,11 +50,12 @@ function fix_ccalls!(mod::LLVM.Module, d)
             dest = called_value(instr)
             if dest isa ConstantExpr && occursin("inttoptr", string(dest))
                 argtypes = [llvmtype(op) for op in operands(instr)]
-                num_extra_args = 1 + length(collect(eachmatch(r"jl_roots", string(instr))))
+		nargs = length(parameters(eltype(argtypes[end])))
+                # num_extra_args = 1 + length(collect(eachmatch(r"jl_roots", string(instr))))
                 ptr = Ptr{Cvoid}(convert(Int, first(operands(dest))))
                 if haskey(d, ptr)
                     sym = d[ptr]
-                    newdest = LLVM.Function(mod, string(sym), LLVM.FunctionType(llvmtype(instr), argtypes[1 : end - num_extra_args]))
+                    newdest = LLVM.Function(mod, string(sym), LLVM.FunctionType(llvmtype(instr), argtypes[1:nargs]))
                     LLVM.linkage!(newdest, LLVM.API.LLVMExternalLinkage)
                     replace_uses!(dest, newdest)
                     changed = true
