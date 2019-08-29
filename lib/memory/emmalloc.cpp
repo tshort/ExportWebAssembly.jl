@@ -912,7 +912,7 @@ static void* emmalloc_realloc(void *ptr, size_t size) {
 }
 
 static struct mallinfo emmalloc_mallinfo() {
-	struct mallinfo info;
+        struct mallinfo info;
   info.arena = 0;
   info.ordblks = 0;
   info.smblks = 0;

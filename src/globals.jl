@@ -69,7 +69,7 @@ function fix_globals!(mod::LLVM.Module, d)
     uint8_t = julia_to_llvm(UInt8)
 
     Builder(context(mod)) do builder
-    	for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
+            for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
             lastop = Ref{Any}(instr)
             walk(instr) do op
                 if occursin("inttoptr", string(op)) && !occursin("addrspacecast", string(op))
@@ -81,7 +81,7 @@ function fix_globals!(mod::LLVM.Module, d)
                         @show e = serialize(ctx, obj)
                         deserialize_funs[ptr] = eval(:($(Symbol(:deserialize_global_, UInt(ptr)))(Vptr) = $e))
                         v = take!(ctx.io)
-			gv_typ = LLVM.ArrayType(uint8_t, length(v))
+                        gv_typ = LLVM.ArrayType(uint8_t, length(v))
                         data = LLVM.GlobalVariable(mod, gv_typ, "jl.global.data")
                         linkage!(data, LLVM.API.LLVMExternalLinkage)
                         constant!(data, true)
@@ -90,9 +90,9 @@ function fix_globals!(mod::LLVM.Module, d)
                         # Create a pointer to the data.
                         gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
                         linkage!(gptr, LLVM.API.LLVMInternalLinkage)
-			LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
+                        LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
                         gptr2 = load!(builder, gptr) 
-			gptr3 = addrspacecast!(builder, gptr2, LLVM.PointerType(eltype(julia_to_llvm(Any)), 10))
+                        gptr3 = addrspacecast!(builder, gptr2, LLVM.PointerType(eltype(julia_to_llvm(Any)), 10))
                         replace_uses!(lastop[], gptr3)
                         # Create the Julia object from `data` and include that in `init_fun`.
                         position!(builder, jl_init_global_entry)
@@ -112,6 +112,8 @@ function fix_globals!(mod::LLVM.Module, d)
     end
     for (ptr, dfun) in deserialize_funs
         deser_mod = irgen(dfun, Tuple{Ptr{UInt8}})
+        @show d = find_ccalls(dfun, Tuple{Ptr{UInt8}})
+        fix_ccalls!(deser_mod, d)
         # rename deserialization function to "deserialize_global_*"
         funname = string("deserialize_global_", UInt(ptr))
         fun = first(filter(x -> startswith(LLVM.name(x), string("julia_", funname)), functions(deser_mod)))[2]

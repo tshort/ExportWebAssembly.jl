@@ -11,6 +11,21 @@ struct SerializeContext
 end
 SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Dict())
 
+const boottypes = Dict(
+    Any => :jl_any_type,
+    Float64 => :jl_float64_type,
+    Float32 => :jl_float32_type,
+    Int64 => :jl_int64_type,
+    Int32 => :jl_int32_type,
+    Int16 => :jl_int16_type,
+    Int8 => :jl_int8_type,
+    UInt64 => :jl_uint64_type,
+    UInt32 => :jl_uint32_type,
+    UInt16 => :jl_uint16_type,
+    UInt8 => :jl_uint8_type,
+)
+
+
 """
     serialize(ctx::SerializeContext, x)
 
@@ -38,35 +53,41 @@ function serialize(ctx::SerializeContext, @nospecialize(x))
 end
 
 function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
-    if haskey(ctx.types, t)
-        return ctx.types[t]
+    if haskey(boottypes, t)
+        return :(unsafe_load(cglobal($(QuoteNode(boottypes[t])), Type)))
+    elseif haskey(ctx.types, string(t))
+        return ctx.types[string(t)]
     else
-        primary = unwrap_unionall(t.wrapper)
+        # primary = unwrap_unionall(t.wrapper)
         exp = quote
             tn    = $(serialize(ctx, t.name))
-            names = $(serialize(ctx, t.names))
-            super = $(serialize(ctx, primary.s)uper)
-            parameters = $(serialize(ctx, primary.parameters))
-            types = $(serialize(ctx, primary.types))
+            # names = $(serialize(ctx, t.names))
+            super = serialize(ctx, t.super)
+            parameters = $(serialize(ctx, t.parameters))
+            types = $(serialize(ctx, t.types))
             ndt = ccall(:jl_new_datatype, Any, (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
-                        tn, tn.module, super, parameters, names, types,
-		                $(primary.abstract), $(primary.mutabl), $(primary.ninitialized))
-            tn.wrapper = ndt.name.wrapper
+                        tn, tn.module, super, parameters, #=names=# Nothing, types,
+                                $(t.abstract), $(t.mutabl), $(t.ninitialized))
+            # tn.wrapper = ndt.name.wrapper
             ccall(:jl_set_const, Cvoid, (Any, Any, Any), tn.module, tn.name, tn.wrapper)
-            ty = tn.wrapper
-            hasinstance = serialize(ctx, )
-            $(if isdefined(primary, :instance) && !isdefined(t, :instance)
-                # use setfield! directly to avoid `fieldtype` lowering expecting to see a Singleton object already on ty
-                :(Core.setfield!(ty, :instance, ccall(:jl_new_struct, Any, (Any, Any...), ty)))
-            end)
+            ndt
+            # ty = tn.wrapper
+            # $(ctx.types[string(t)]) = ndt
+            # hasinstance = serialize(ctx, )
+            # $(if isdefined(primary, :instance) && !isdefined(t, :instance)
+            #     # use setfield! directly to avoid `fieldtype` lowering expecting to see a Singleton object already on ty
+            #     :(Core.setfield!(ty, :instance, ccall(:jl_new_struct, Any, (Any, Any...), ty)))
+            # end)
         end
     end
 end
 
 function serialize(ctx::SerializeContext, tn::Core.TypeName)
     quote
+        println($(serialize(ctx, tn.name)))
         ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
-              $(serialize(ctx, tn.name)), cglobal(:jl_main_module, Any)  #=__deserialized_types__ =# )
+              $(serialize(ctx, tn.name)), Main  #=__deserialized_types__ =# )
+            #   $(serialize(ctx, tn.name)), unsafe_load(cglobal(:jl_main_module, Any))  #=__deserialized_types__ =# )
     end
 end
 
@@ -92,9 +113,13 @@ end
 function serialize(ctx::SerializeContext, x::Symbol)
     haskey(ctx.symbols, x) && return ctx.symbols[x]
     name = gensym(:symbol)
+    name = :XX
     ctx.symbols[x] = name
     quote
-        ccall(:jl_set_global, Cvoid, (Any, Any, Any), unsafe_load(cglobal(:jl_main_module, Any)), $(QuoteNode(name)), $(serialize(ctx, string(x))))
+        x = ccall(:jl_symbol_n, Any, (Ptr{UInt8}, Csize_t), $(serialize(ctx, string(x))), $(length(string(x))))
+        # ccall(:jl_set_global, Cvoid, (Any, Any, Any), unsafe_load(cglobal(:jl_main_module, Any)), $(QuoteNode(name)), x)
+        global $name = x
+        x
     end
 end
 
@@ -134,7 +159,7 @@ function serialize(ctx::SerializeContext, a::Array)
         end
     else
         idx = Int[]
-	e = Array{Any}(undef, length(a))
+        e = Array{Any}(undef, length(a))
         @inbounds for i in eachindex(a)
             if isassigned(a, i)
                 e[i] = serialize(ctx, a[i])

@@ -91,7 +91,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
     definitions = Iterators.filter(f->!isdeclaration(f), collect(functions(mod)))
     # definitions = collect(functions(mod))
     wrapper = let
-	fs = collect(Iterators.filter(f->startswith(LLVM.name(f), "jfptr_"), definitions))
+        fs = collect(Iterators.filter(f->startswith(LLVM.name(f), "jfptr_"), definitions))
         @assert length(fs) == 1
         fs[1]
     end
