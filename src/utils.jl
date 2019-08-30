@@ -50,6 +50,7 @@ function Base.write(mod::LLVM.Module, path::String)
 end
 
 
-walk(f, x) = nothing
+walk(f, x) = false
 walk(f, x::Instruction) = foreach(c->walk(f,c), operands(x))
 walk(f, x::ConstantExpr) = f(x) || foreach(c->walk(f,c), operands(x))
+

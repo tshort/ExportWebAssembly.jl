@@ -11,7 +11,7 @@ struct SerializeContext
 end
 SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Dict())
 
-const boottypes = Dict(
+const _td = Dict(
     Any => :jl_any_type,
     Float64 => :jl_float64_type,
     Float32 => :jl_float32_type,
@@ -23,8 +23,15 @@ const boottypes = Dict(
     UInt32 => :jl_uint32_type,
     UInt16 => :jl_uint16_type,
     UInt8 => :jl_uint8_type,
+    Cint => :jl_int32_type,
+    Cvoid => :jl_any_type,
 )
 
+const _t = Dict()
+
+for (t,s) in _td
+    _t[t] = :(unsafe_load(cglobal($(QuoteNode(s)), Type)))
+end
 
 """
     serialize(ctx::SerializeContext, x)
@@ -53,21 +60,23 @@ function serialize(ctx::SerializeContext, @nospecialize(x))
 end
 
 function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
-    if haskey(boottypes, t)
-        return :(unsafe_load(cglobal($(QuoteNode(boottypes[t])), Type)))
+    if haskey(_t, t)
+        return _t[t]
     elseif haskey(ctx.types, string(t))
         return ctx.types[string(t)]
     else
         # primary = unwrap_unionall(t.wrapper)
+        @show t
         exp = quote
             tn    = $(serialize(ctx, t.name))
             # names = $(serialize(ctx, t.names))
-            super = serialize(ctx, t.super)
+            super = $(serialize(ctx, t.super))
             parameters = $(serialize(ctx, t.parameters))
             types = $(serialize(ctx, t.types))
-            ndt = ccall(:jl_new_datatype, Any, (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
+            ndt = ccall(:jl_new_datatype, Any, 
+                        (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
                         tn, tn.module, super, parameters, #=names=# Nothing, types,
-                                $(t.abstract), $(t.mutabl), $(t.ninitialized))
+                        $(t.abstract), $(t.mutable), $(t.ninitialized))
             # tn.wrapper = ndt.name.wrapper
             ccall(:jl_set_const, Cvoid, (Any, Any, Any), tn.module, tn.name, tn.wrapper)
             ndt
@@ -84,7 +93,7 @@ end
 
 function serialize(ctx::SerializeContext, tn::Core.TypeName)
     quote
-        println($(serialize(ctx, tn.name)))
+        # println($(serialize(ctx, tn.name)))
         ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
               $(serialize(ctx, tn.name)), Main  #=__deserialized_types__ =# )
             #   $(serialize(ctx, tn.name)), unsafe_load(cglobal(:jl_main_module, Any))  #=__deserialized_types__ =# )
@@ -103,13 +112,6 @@ function serialize(ctx::SerializeContext, x::String)
     end
 end
 
-function serialize(ctx::SerializeContext, x::Symbol)
-    haskey(ctx.symbols, x) && return ctx.symbols[x]
-    name = gensym(:symbol)
-    ctx.symbols[x] = name
-    res = Expr(:global, Expr(:(=), name, Expr(:call, :Symbol, serialize(ctx, string(x)))))
-    res
-end
 function serialize(ctx::SerializeContext, x::Symbol)
     haskey(ctx.symbols, x) && return ctx.symbols[x]
     name = gensym(:symbol)
