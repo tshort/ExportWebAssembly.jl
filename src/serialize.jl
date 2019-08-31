@@ -6,10 +6,10 @@ result.
 """
 struct SerializeContext
     io::IOBuffer
-    symbols::Dict{Any,Any}
-    types::Dict{Any,Any}
+    store::Dict{Any,Any}   # Meant to map Julia object to variable name
+    init::Vector{Any}      # Expressions to run initially
 end
-SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Dict())
+SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Vector{Expr}())
 
 const _td = Dict(
     Any => :jl_any_type,
@@ -62,13 +62,14 @@ end
 function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
     if haskey(_t, t)
         return _t[t]
-    elseif haskey(ctx.types, string(t))
-        return ctx.types[string(t)]
+    elseif haskey(ctx.store, t)
+        return ctx.store[t]
     else
         # primary = unwrap_unionall(t.wrapper)
-        @show t
-        exp = quote
-            let
+        name = gensym(:type)
+        ctx.store[t] = name
+        e = quote
+            $name = let
                 local tn    = $(serialize(ctx, t.name))
                 # names = $(serialize(ctx, t.names))
                 local super = $(serialize(ctx, t.super))
@@ -90,16 +91,22 @@ function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
                 # end)
             end
         end
+        push!(ctx.init, e)
+        return name
     end
 end
 
 function serialize(ctx::SerializeContext, tn::Core.TypeName)
-    quote
-        # println($(serialize(ctx, tn.name)))
-        ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
+    haskey(ctx.store, tn) && return ctx.store[tn]
+    name = gensym(:typename)
+    ctx.store[tn] = name
+    e = quote
+        $name = ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
               $(serialize(ctx, tn.name)), Main  #=__deserialized_types__ =# )
             #   $(serialize(ctx, tn.name)), unsafe_load(cglobal(:jl_main_module, Any))  #=__deserialized_types__ =# )
     end
+    push!(ctx.init, e)
+    return name
 end
 
 function serialize(ctx::SerializeContext, x::String)
@@ -115,16 +122,15 @@ function serialize(ctx::SerializeContext, x::String)
 end
 
 function serialize(ctx::SerializeContext, x::Symbol)
-    haskey(ctx.symbols, x) && return ctx.symbols[x]
+    haskey(ctx.store, x) && return ctx.store[x]
     name = gensym(:symbol)
-    # name = :XX
-    ctx.symbols[x] = name
-    quote
-        x = ccall(:jl_symbol_n, Any, (Ptr{UInt8}, Csize_t), $(serialize(ctx, string(x))), $(length(string(x))))
+    ctx.store[x] = name
+    e = quote
+        $name = ccall(:jl_symbol_n, Any, (Ptr{UInt8}, Csize_t), $(serialize(ctx, string(x))), $(length(string(x))))
         # ccall(:jl_set_global, Cvoid, (Any, Any, Any), unsafe_load(cglobal(:jl_main_module, Any)), $(QuoteNode(name)), x)
-        global $name = x
-        x
     end
+    push!(ctx.init, e)
+    return name
 end
 
 
