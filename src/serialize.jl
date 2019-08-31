@@ -68,25 +68,27 @@ function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
         # primary = unwrap_unionall(t.wrapper)
         @show t
         exp = quote
-            tn    = $(serialize(ctx, t.name))
-            # names = $(serialize(ctx, t.names))
-            super = $(serialize(ctx, t.super))
-            parameters = $(serialize(ctx, t.parameters))
-            types = $(serialize(ctx, t.types))
-            ndt = ccall(:jl_new_datatype, Any, 
-                        (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
-                        tn, tn.module, super, parameters, #=names=# Nothing, types,
-                        $(t.abstract), $(t.mutable), $(t.ninitialized))
-            # tn.wrapper = ndt.name.wrapper
-            ccall(:jl_set_const, Cvoid, (Any, Any, Any), tn.module, tn.name, tn.wrapper)
-            ndt
-            # ty = tn.wrapper
-            # $(ctx.types[string(t)]) = ndt
-            # hasinstance = serialize(ctx, )
-            # $(if isdefined(primary, :instance) && !isdefined(t, :instance)
-            #     # use setfield! directly to avoid `fieldtype` lowering expecting to see a Singleton object already on ty
-            #     :(Core.setfield!(ty, :instance, ccall(:jl_new_struct, Any, (Any, Any...), ty)))
-            # end)
+            let
+                local tn    = $(serialize(ctx, t.name))
+                # names = $(serialize(ctx, t.names))
+                local super = $(serialize(ctx, t.super))
+                local parameters = $(serialize(ctx, t.parameters))
+                local types = $(serialize(ctx, t.types))
+                local ndt = ccall(:jl_new_datatype, Any, 
+                            (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
+                            tn, tn.module, super, parameters, #=names=# Nothing, types,
+                            $(t.abstract), $(t.mutable), $(t.ninitialized))
+                # tn.wrapper = ndt.name.wrapper
+                # ccall(:jl_set_const, Cvoid, (Any, Any, Any), tn.module, tn.name, tn.wrapper)
+                ndt
+                # ty = tn.wrapper
+                # $(ctx.types[string(t)]) = ndt
+                # hasinstance = serialize(ctx, )
+                # $(if isdefined(primary, :instance) && !isdefined(t, :instance)
+                #     # use setfield! directly to avoid `fieldtype` lowering expecting to see a Singleton object already on ty
+                #     :(Core.setfield!(ty, :instance, ccall(:jl_new_struct, Any, (Any, Any...), ty)))
+                # end)
+            end
         end
     end
 end
@@ -115,7 +117,7 @@ end
 function serialize(ctx::SerializeContext, x::Symbol)
     haskey(ctx.symbols, x) && return ctx.symbols[x]
     name = gensym(:symbol)
-    name = :XX
+    # name = :XX
     ctx.symbols[x] = name
     quote
         x = ccall(:jl_symbol_n, Any, (Ptr{UInt8}, Csize_t), $(serialize(ctx, string(x))), $(length(string(x))))
