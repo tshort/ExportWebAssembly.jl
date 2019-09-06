@@ -16,7 +16,7 @@ find_globals(@nospecialize(f), @nospecialize(tt)) = find_globals(GlobalsContext(
 
 function find_globals(ctx::GlobalsContext, ref::Reflection)
     result = Dict{Ptr{Nothing}, Any}()
-    globals = filter(c -> lookthrough(c -> any(x -> !isimmutable(x) || x isa GlobalRef, c.args), c), 
+    globals = filter(c -> lookthrough(c -> any(x -> !isimmutable(x) || x isa GlobalRef || x isa DataType, c.args), c), 
                      ref.CI.code)
     for gl in globals
         for c in gl[2].args
@@ -207,13 +207,13 @@ function fix_globals!(mod::LLVM.Module, d)
         position!(builder, jl_init_global_entry)
         gfunc_type = LLVM.FunctionType(julia_to_llvm(Cvoid), 
                                        LLVMType[LLVM.PointerType(julia_to_llvm(Int8)),
-                                                Iterators.repeated(julia_to_llvm(Ptr{Any}), nglobals)...])
+                                                Iterators.repeated(LLVM.FunctionType(julia_to_llvm(Any)), nglobals)...])
         deserialize_globals_func = LLVM.Function(mod, "_deserialize_globals", gfunc_type)
         LLVM.linkage!(deserialize_globals_func, LLVM.API.LLVMExternalLinkage)
-        # for i in 1:nglobals
-        #     # gptrs[i] = LLVM.load!(builder, gptrs[i])   # load is wrong
-        #     gptrs[i] = LLVM.gep!(builder, gptrs[i], [ConstantInt(0, context(mod)), ConstantInt(0, context(mod))]) # segfaults
-        # end
+        for i in 1:nglobals
+            # The following fix is to match the argument types which are an integer, not a %jl_value_t**.
+            gptrs[i] = LLVM.ptrtoint!(builder, gptrs[i], julia_to_llvm(Csize_t))
+        end
         LLVM.call!(builder, deserialize_globals_func, LLVM.Value[dataptr, gptrs...])
         ret!(builder)
     end

@@ -77,7 +77,7 @@ function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
                 local types = $(serialize(ctx, t.types))
                 local ndt = ccall(:jl_new_datatype, Any, 
                             (Any, Any, Any, Any, Any, Any, Cint, Cint, Cint),
-                            tn, tn.module, super, parameters, #=names=# Nothing, types,
+                            tn, tn.module, super, parameters, #=names=# unsafe_load(cglobal(:jl_any_type, Any)), types,
                             $(t.abstract), $(t.mutable), $(t.ninitialized))
                 # tn.wrapper = ndt.name.wrapper
                 # ccall(:jl_set_const, Cvoid, (Any, Any, Any), tn.module, tn.name, tn.wrapper)
@@ -102,8 +102,8 @@ function serialize(ctx::SerializeContext, tn::Core.TypeName)
     ctx.store[tn] = name
     e = quote
         $name = ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
-              $(serialize(ctx, tn.name)), Main  #=__deserialized_types__ =# )
-            #   $(serialize(ctx, tn.name)), unsafe_load(cglobal(:jl_main_module, Any))  #=__deserialized_types__ =# )
+            #   $(serialize(ctx, tn.name)), Main  #=__deserialized_types__ =# )
+              $(serialize(ctx, tn.name)), unsafe_load(cglobal(:jl_main_module, Any))  #=__deserialized_types__ =# )
     end
     push!(ctx.init, e)
     return name
@@ -115,9 +115,7 @@ function serialize(ctx::SerializeContext, x::String)
     ioptr = ctx.io.ptr
     write(ctx.io, v)
     quote
-        p = Vptr + $(ioptr - 1)
-        len = $(length(v))
-        unsafe_string(p, len)
+        unsafe_string(Vptr + $(ioptr - 1), $(length(v)))
     end
 end
 
