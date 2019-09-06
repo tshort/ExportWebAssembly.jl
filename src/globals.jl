@@ -143,7 +143,7 @@ function fix_globals!(mod::LLVM.Module, d)
 
     ctx = SerializeContext()
     es = []
-    objs = []
+    objs = Set()
     instrs = []
     gptrs = []
     for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
@@ -151,11 +151,22 @@ function fix_globals!(mod::LLVM.Module, d)
         walk(instr) do op
             if occursin("inttoptr", string(op)) && !occursin("addrspacecast", string(op))
                 ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
-                if haskey(d, ptr)
+                if haskey(d, ptr) && !in(d[ptr], objs)
                     obj = d[ptr]
                     push!(es, serialize(ctx, obj))
                     push!(objs, obj)
                     push!(instrs, lastop[])
+                    # Create pointers to the data.
+                    gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
+                    linkage!(gptr, LLVM.API.LLVMInternalLinkage)
+                    LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
+                    push!(gptrs, gptr)
+                    Builder(context(mod)) do builder
+                        position!(builder, instr)
+                        gptr2 = load!(builder, gptr) 
+                        gptr3 = addrspacecast!(builder, gptr2, LLVM.PointerType(eltype(julia_to_llvm(Any)), 10))
+                        replace_uses!(lastop[], gptr3)
+                    end
                 end
                 return true
             end
@@ -164,58 +175,53 @@ function fix_globals!(mod::LLVM.Module, d)
         end
     end
     nglobals = length(es)
+
+    for i in 1:nglobals
+        # Assign the appropriate function argument to the appropriate global.
+        es[i] = :(unsafe_store!($((Symbol("global", i))), $(es[i])))
+        # es[i] = :(unsafe_store!(convert(Ptr{Any}, pointer_from_objref($((Symbol("global", i))))), $(es[i])))
+    end
+    # Define the deserializing function.
+    @show fune = quote
+        function _deserialize_globals(Vptr, $((Symbol("global", i) for i in 1:nglobals)...))
+            $(ctx.init...)
+            $(es...)
+            return
+        end
+    end
+    # Execute the deserializing function.
+    deser_fun = eval(fune)
+    v = take!(ctx.io)
+    gv_typ = LLVM.ArrayType(uint8_t, length(v))
+    data = LLVM.GlobalVariable(mod, gv_typ, "jl.global.data")
+    linkage!(data, LLVM.API.LLVMExternalLinkage)
+    constant!(data, true)
+    LLVM.API.LLVMSetInitializer(LLVM.ref(data), 
+                                LLVM.API.LLVMConstArray(LLVM.ref(uint8_t),
+                                                        [LLVM.ref(ConstantInt(uint8_t, x)) for x in v],
+                                                        UInt32(length(v))))
     Builder(context(mod)) do builder
-        for i in 1:nglobals
-            # Assign the appropriate function argument to the appropriate global.
-            es[i] = :(unsafe_store!(convert(Ptr{Any}, pointer_from_objref($((Symbol("global", i))))), $(es[i])))
-            # Create pointers to the data.
-            gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
-            linkage!(gptr, LLVM.API.LLVMInternalLinkage)
-            LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
-            push!(gptrs, gptr)
-            # position!(builder, instrs[i])
-            gptr2 = load!(builder, gptr) 
-            gptr3 = addrspacecast!(builder, gptr2, LLVM.PointerType(eltype(julia_to_llvm(Any)), 10))
-            replace_uses!(instrs[i], gptr3)
-        end
-
-
-        # Define the deserializing function.
-        @show fune = quote
-            function _deserialize_globals(Vptr, $((Symbol("global", i) for i in 1:nglobals)...))
-                $(ctx.init...)
-                $(es...)
-                return
-            end
-        end
-        # Execute the deserializing function.
-        deser_fun = eval(fune)
-        v = take!(ctx.io)
-        gv_typ = LLVM.ArrayType(uint8_t, length(v))
-        data = LLVM.GlobalVariable(mod, gv_typ, "jl.global.data")
-        linkage!(data, LLVM.API.LLVMExternalLinkage)
-        constant!(data, true)
-        LLVM.API.LLVMSetInitializer(LLVM.ref(data), 
-                                    LLVM.API.LLVMConstArray(LLVM.ref(uint8_t),
-                                                            [LLVM.ref(ConstantInt(uint8_t, x)) for x in v],
-                                                            UInt32(length(v))))
         dataptr = gep!(builder, data, [ConstantInt(0, context(mod)), ConstantInt(0, context(mod))])
+
         # Create the Julia object from `data` and include that in `init_fun`.
         position!(builder, jl_init_global_entry)
         gfunc_type = LLVM.FunctionType(julia_to_llvm(Cvoid), 
                                        LLVMType[LLVM.PointerType(julia_to_llvm(Int8)),
-                                                Iterators.repeated(julia_to_llvm(Any), nglobals)...])
-                                   #             fill(julia_to_llvm(Any), nglobals)...])
+                                                Iterators.repeated(julia_to_llvm(Ptr{Any}), nglobals)...])
         deserialize_globals_func = LLVM.Function(mod, "_deserialize_globals", gfunc_type)
         LLVM.linkage!(deserialize_globals_func, LLVM.API.LLVMExternalLinkage)
+        # for i in 1:nglobals
+        #     # gptrs[i] = LLVM.load!(builder, gptrs[i])   # load is wrong
+        #     gptrs[i] = LLVM.gep!(builder, gptrs[i], [ConstantInt(0, context(mod)), ConstantInt(0, context(mod))]) # segfaults
+        # end
         LLVM.call!(builder, deserialize_globals_func, LLVM.Value[dataptr, gptrs...])
         ret!(builder)
     end
-    tt = Tuple{Ptr{UInt8}, Iterators.repeated(Any, nglobals)...}
+    tt = Tuple{Ptr{UInt8}, Iterators.repeated(Ptr{Any}, nglobals)...}
     deser_mod = irgen(deser_fun, tt) 
     d = find_ccalls(deser_fun, tt)
     fix_ccalls!(deser_mod, d)
-    # rename deserialization function to "deserialize_globals"
+    # rename deserialization function to "_deserialize_globals"
     fun = first(filter(x -> startswith(LLVM.name(x), "julia__deserialize_globals"), functions(deser_mod)))[2]
     LLVM.name!(fun, "_deserialize_globals")
     linkage!(fun, LLVM.API.LLVMExternalLinkage)

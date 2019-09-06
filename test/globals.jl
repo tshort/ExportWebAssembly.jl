@@ -1,19 +1,21 @@
+using Test, ExportWebAssembly, Libdl
+import LLVM
+
+# @testset "serialize" begin
+#     ctx = ExportWebAssembly.SerializeContext()
+#     a = Any["abcdg", ["hi", "bye"], 3333, Int32(44), 314f0, 3.14, (1, 3.3f0), Core.svec(9.9, 9), :sym, :sym, :a]
+#     e = ExportWebAssembly.serialize(ctx, a)
+#     g = eval(:(Vptr -> $e))
+#     v = take!(ctx.io)
+#     GC.enable(false)
+#     res = g(pointer(v))
+#     GC.enable(true)
+#     @test res == a
+# end
 
 
-@testset "serialize" begin
-    ctx = ExportWebAssembly.SerializeContext()
-    a = Any["abcdg", ["hi", "bye"], 3333, Int32(44), 314f0, 3.14, (1, 3.3f0), Core.svec(9.9, 9), :sym, :sym, :a]
-    e = ExportWebAssembly.serialize(ctx, a)
-    g = eval(:(Vptr -> $e))
-    v = take!(ctx.io)
-    GC.enable(false)
-    res = g(pointer(v))
-    GC.enable(true)
-    @test res == a
-end
-
-
-const a = ["abcdg", "asdfl", 123, 3.14, ["a", "asdf"], (1, 3.63)]
+# const a = ["abcdg", "asdfl", 123, 3.14, ["a", "asdf"], (1, 3.63)]
+const a = "abcdg"
 
 @testset "globals" begin
     # f() = "asdf"
@@ -25,7 +27,8 @@ const a = ["abcdg", "asdfl", 123, 3.14, ["a", "asdf"], (1, 3.63)]
     m = irgen(f, Tuple{})
     ExportWebAssembly.fix_globals!(m, d)
     ExportWebAssembly.optimize!(m)
-    verify(m)
+    @show m
+    LLVM.verify(m)
     
     write(m, "test.bc")
     bindir = string(Sys.BINDIR, "/../tools")
@@ -38,7 +41,7 @@ const a = ["abcdg", "asdfl", 123, 3.14, ["a", "asdf"], (1, 3.63)]
     
     GC.enable(false)
     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(functions(m))))
+    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
     str = ccall(Libdl.dlsym(dylib, funname), Any, ())
     Libdl.dlclose(dylib)
     GC.enable(true)
