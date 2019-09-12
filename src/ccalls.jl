@@ -49,8 +49,8 @@ function fix_ccalls!(mod::LLVM.Module, d)
         if instr isa LLVM.CallInst
             dest = called_value(instr)
             if dest isa ConstantExpr && occursin("inttoptr", string(dest))
-                @show instr
-                @show dest
+                # @show instr
+                # @show dest
                 argtypes = [llvmtype(op) for op in operands(instr)]
                 nargs = length(parameters(eltype(argtypes[end])))
                 # num_extra_args = 1 + length(collect(eachmatch(r"jl_roots", string(instr))))
@@ -63,12 +63,13 @@ function fix_ccalls!(mod::LLVM.Module, d)
                     changed = true
                 end
             end
-        elseif instr isa LLVM.LoadInst
+        elseif instr isa LLVM.LoadInst && occursin("inttoptr", string(instr))
             # dest = called_value(instr)
             walk(instr) do op
                 if occursin("inttoptr", string(op)) && 
                         !occursin("addrspacecast", string(op)) && 
                         !occursin("getelementptr", string(op))
+                    first(operands(op)) isa LLVM.ConstantInt || return false
                     ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
                     if haskey(d, ptr)
                         obj = d[ptr]

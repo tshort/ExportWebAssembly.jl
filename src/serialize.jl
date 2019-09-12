@@ -11,7 +11,7 @@ struct SerializeContext
 end
 SerializeContext(io::IOBuffer = IOBuffer()) = SerializeContext(io, Dict(), Vector{Expr}())
 
-const _td = Dict(
+const _td = IdDict(
     Any => :jl_any_type,
     Float64 => :jl_float64_type,
     Float32 => :jl_float32_type,
@@ -25,12 +25,32 @@ const _td = Dict(
     UInt8 => :jl_uint8_type,
     Cint => :jl_int32_type,
     Cvoid => :jl_any_type,
+    Array => :jl_array_type,
+    Array{Any,1} => :jl_array_any_type,
+    Array{Int32,1} => :jl_array_int32_type,
+    Array{UInt8,1} => :jl_array_uint8_type,
+    ErrorException => :jl_errorexception_type,
 )
 
-const _t = Dict()
+const _t = IdDict()
 
 for (t,s) in _td
     _t[t] = :(unsafe_load(cglobal($(QuoteNode(s)), Type)))
+end
+
+const _gd = IdDict(
+    Core => :jl_core_module,
+    Main => :jl_main_module,
+    nothing => :jl_nothing,
+    () => :jl_emptytuple,
+    Core.svec() => :jl_emptysvec,
+    UndefRefError() => :jl_undefref_exception,
+)
+
+const _g = IdDict()
+
+for (x,s) in _gd
+    _g[x] = :(unsafe_load(cglobal($(QuoteNode(s)), Any)))
 end
 
 """
@@ -53,6 +73,8 @@ Some simple types like boxed variables do not need to write anything to `ctx.io`
 They can return an expression that directly creates the object.
 """
 function serialize(ctx::SerializeContext, @nospecialize(x))
+	@show x
+    haskey(_g, x) && return _g[x]
     # TODO: fix this major kludge.
     if nfields(x) > 0
         return Expr(:tuple, (serialize(ctx, getfield(x,i)) for i in 1:nfields(x))...)
@@ -66,7 +88,7 @@ function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
         return ctx.store[t]
     else
         # primary = unwrap_unionall(t.wrapper)
-        name = gensym(:type)
+        name = gensym(Symbol(:type, "-", t.name.name))
         ctx.store[t] = name
         e = quote
             $name = let
@@ -98,7 +120,7 @@ end
 
 function serialize(ctx::SerializeContext, tn::Core.TypeName)
     haskey(ctx.store, tn) && return ctx.store[tn]
-    name = gensym(:typename)
+    name = gensym(Symbol(:typename, "-", tn.name))
     ctx.store[tn] = name
     e = quote
         $name = ccall(:jl_new_typename_in, Ref{Core.TypeName}, (Any, Any),
@@ -107,6 +129,10 @@ function serialize(ctx::SerializeContext, tn::Core.TypeName)
     end
     push!(ctx.init, e)
     return name
+end
+
+function serialize(ctx::SerializeContext, mi::Core.MethodInstance)
+    return :(unsafe_load(cglobal(:jl_emptytuple, Any)))
 end
 
 function serialize(ctx::SerializeContext, x::String)
@@ -121,7 +147,7 @@ end
 
 function serialize(ctx::SerializeContext, x::Symbol)
     haskey(ctx.store, x) && return ctx.store[x]
-    name = gensym(:symbol)
+    name = gensym(Symbol(:symbol, "-", x))
     ctx.store[x] = name
     e = quote
         $name = ccall(:jl_symbol_n, Any, (Ptr{UInt8}, Csize_t), $(serialize(ctx, string(x))), $(length(string(x))))
@@ -145,10 +171,12 @@ serialize(ctx::SerializeContext, x::Char) = :(ccall(:jl_box_char, Any, (UInt32,)
 serialize(ctx::SerializeContext, x::Bool) = :(ccall(:jl_box_bool, Any, (UInt8,), $x))
 
 function serialize(ctx::SerializeContext, a::Tuple)
+    length(a) == 0 && return :(unsafe_load(cglobal(:jl_emptytuple, Any)))
     Expr(:tuple, (serialize(ctx, x) for x in a)...)
 end
 
 function serialize(ctx::SerializeContext, a::Core.SimpleVector)
+    length(a) == 0 && return :(unsafe_load(cglobal(:jl_emptysvec, Any)))
     Expr(:call, Expr(:., :Core, QuoteNode(:svec)), (serialize(ctx, x) for x in a)...)
 end
 
