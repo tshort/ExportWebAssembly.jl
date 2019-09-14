@@ -44,7 +44,6 @@ meant to be linked to `libjulia` or other libraries.
 `d` is a `Dict` mapping a function address to symbol name for `ccall`s.
 """
 function fix_ccalls!(mod::LLVM.Module, d)
-    changed = false
     for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
         if instr isa LLVM.CallInst
             dest = called_value(instr)
@@ -60,29 +59,28 @@ function fix_ccalls!(mod::LLVM.Module, d)
                     newdest = LLVM.Function(mod, string(sym), LLVM.FunctionType(llvmtype(instr), argtypes[1:nargs]))
                     LLVM.linkage!(newdest, LLVM.API.LLVMExternalLinkage)
                     replace_uses!(dest, newdest)
-                    changed = true
                 end
             end
         elseif instr isa LLVM.LoadInst && occursin("inttoptr", string(instr))
             # dest = called_value(instr)
-            walk(instr) do op
-                if occursin("inttoptr", string(op)) && 
-                        !occursin("addrspacecast", string(op)) && 
-                        !occursin("getelementptr", string(op))
-                    first(operands(op)) isa LLVM.ConstantInt || return false
-                    ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
+            for op in operands(instr)
+                lastop = op
+                @show op
+                if occursin("inttoptr", string(op)) 
+                    if occursin("addrspacecast", string(op)) || occursin("getelementptr", string(op))
+                        op = first(operands(op))
+                        @show op
+                    end
+                    first(operands(op)) isa LLVM.ConstantInt || continue
+                    @show ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
                     if haskey(d, ptr)
-                        obj = d[ptr]
+                        @show obj = d[ptr]
                         newdest = GlobalVariable(mod, llvmtype(instr), string(d[ptr]))
                         LLVM.linkage!(newdest, LLVM.API.LLVMExternalLinkage)
                         replace_uses!(op, newdest)
-                        changed = true
-                        return true
                     end
                 end
-                return false
             end
         end
     end
-    return changed
 end

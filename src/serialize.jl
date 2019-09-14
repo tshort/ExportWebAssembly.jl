@@ -191,7 +191,7 @@ function serialize(ctx::SerializeContext, a::Array)
         write(ctx.io, a)
         quote
             p = Vptr + $ptr1 - 1
-            unsafe_wrap($(typeof(a)), convert(Ptr{$elty}, p), $dims)
+            unsafe_wrap($(serialize(ctx, typeof(a))), convert(Ptr{$elty}, p), $dims)
         end
     else
         idx = Int[]
@@ -203,8 +203,10 @@ function serialize(ctx::SerializeContext, a::Array)
             end
         end
         aname = gensym()
+        atype = serialize(ctx, typeof(a))
         resulte = [quote
-            $aname = Array{$elty, $(length(dims))}(undef, $dims)
+            # $aname = Array{$elty, $(length(dims))}(undef, $dims)
+            $aname = ccall(:jl_new_array, $(typeof(a)), (Any, Any), $atype, $(serialize(ctx, dims)))
         end]
         for i in idx
             push!(resulte, quote

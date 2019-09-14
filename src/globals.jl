@@ -16,10 +16,12 @@ find_globals(@nospecialize(f), @nospecialize(tt)) = find_globals(GlobalsContext(
 
 function find_globals(ctx::GlobalsContext, ref::Reflection)
     result = Dict{Ptr{Nothing}, Any}()
-    globals = filter(c -> lookthrough(c -> any(x -> !isimmutable(x) || x isa GlobalRef || x isa DataType, c.args), c), 
+    # @show ref.CI.code
+    globals = filter(c -> lookthrough(c -> any(x -> !isimmutable(x) || x isa GlobalRef || x isa DataType || x isa Core.TypeName, c.args), c), 
                      ref.CI.code)
     for gl in globals
         for c in gl[2].args
+            # @show c
             if !isimmutable(c)
                 result[pointer_from_objref(c)] = c
             elseif c isa GlobalRef
@@ -74,19 +76,32 @@ function fix_globals!(mod::LLVM.Module, d)
     instrs = []
     gptrs = []
     for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
-	occursin("inttoptr", string(instr)) || continue
-        lastop = Ref{Any}(instr)
-	@show instr
-        walk(instr) do op
-            if occursin("inttoptr", string(op)) && !occursin("addrspacecast", string(op))
-                first(operands(op)) isa LLVM.ConstantInt || return true
-                ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
-                if haskey(d, ptr) && !in(d[ptr], objs)
-                    @show obj = d[ptr]
-#                    @show obj = unsafe_load(convert(Ptr{Any}, ptr))
+        occursin("inttoptr", string(instr)) || continue
+        # @show typeof(instr)
+        # @show instr
+        # @show length(operands(instr))
+        for op in _operands(instr)
+            lastop = op
+            # @show typeof(op)
+            # @show op
+            if occursin("inttoptr", string(op)) 
+                if occursin("addrspacecast", string(op))
+                    op = first(operands(op))
+                    # @show op
+                end
+                first(operands(op)) isa LLVM.ConstantInt || continue
+                @show ptr = Ptr{Any}(convert(Int, first(operands(op))))
+                # if haskey(d, ptr) && !in(d[ptr], objs)
+                #     obj = d[ptr]
+                @show obj = unsafe_pointer_to_objref(ptr)
+                # @show obj = unsafe_wrap(Vector{UInt}, convert(Ptr{UInt}, ptr), (5,))
+                # @show obj = unsafe_load(convert(Ptr{Any}, obj[1]))
+                # @show unsafe_load(ptr)
+                # @show obj = unsafe_load(convert(Ptr{Any}, ptr))
+                if !in(obj, objs)
                     push!(es, serialize(ctx, obj))
                     push!(objs, obj)
-                    push!(instrs, lastop[])
+                    push!(instrs, lastop)
                     # Create pointers to the data.
                     gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
                     linkage!(gptr, LLVM.API.LLVMInternalLinkage)
@@ -96,17 +111,22 @@ function fix_globals!(mod::LLVM.Module, d)
                         position!(builder, instr)
                         gptr2 = load!(builder, gptr) 
                         gptr3 = addrspacecast!(builder, gptr2, LLVM.PointerType(eltype(julia_to_llvm(Any)), 10))
-                        replace_uses!(lastop[], gptr3)
+                        replace_uses!(lastop, gptr3)
+                        println("*******************************")
+                        @show lastop
+                        @show gptr2
+                        @show gptr3
                     end
-		elseif !haskey(d,ptr)
-			println("*******************")
-			println("Pointer not found for ", ptr)
-			@show instr
                 end
-                return true
+		# elseif !haskey(d,ptr)
+		# 	println("*******************")
+		# 	println("Pointer not found for ", ptr)
+		# 	@show instr
+        #         end
+        #         return true
             end
-            lastop[] = op
-            return false
+            # lastop[] = op
+            # return false
         end
     end
     nglobals = length(es)
@@ -165,6 +185,9 @@ function fix_globals!(mod::LLVM.Module, d)
     LLVM.link!(mod, deser_mod)
     return
 end
+
+_operands(x) = operands(x)
+_operands(x::LLVM.CallInst) = collect(operands(x))[1:end-1]
 
 function f()
     llvmcall(
