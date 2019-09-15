@@ -22,11 +22,11 @@ const b = "B"
     f(x) = @inbounds a[1][3] > b[1] ? 2x : x
     @show d = ExportWebAssembly.find_globals(f, Tuple{Int})
     m = irgen(f, Tuple{Int})
-    @show m
-    ExportWebAssembly.fix_globals!(m, d)
-    @show m
-    # ExportWebAssembly.optimize!(m)
     # @show m
+    ExportWebAssembly.fix_globals!(m, d)
+    # @show m
+    ExportWebAssembly.optimize!(m)
+    @show m
     LLVM.verify(m)
     
     write(m, "test.bc")
@@ -41,9 +41,10 @@ const b = "B"
     GC.enable(false)
     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
     funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-    str = ccall(Libdl.dlsym(dylib, funname), Int, (Int,), Int)
+    num = ccall(Libdl.dlsym(dylib, funname), Int, (Int,), 3)
     Libdl.dlclose(dylib)
     GC.enable(true)
+    @test num == num
     # @test str == (a, b)
 end
 
