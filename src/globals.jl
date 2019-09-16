@@ -3,51 +3,11 @@ struct GlobalsContext
 end
 GlobalsContext() = GlobalsContext(Set())
 
-"""
-    find_globals(f, tt)
-
-Returns a `Dict` mapping function address to object for all `GlobalRef`s
-referenced from the function. This descends into other invocations
-within the function.
-
-Note: this will also include MethodInstances.
-"""
-find_globals(@nospecialize(f), @nospecialize(tt)) = find_globals(GlobalsContext(), reflect(f, tt))
-
-function find_globals(ctx::GlobalsContext, ref::Reflection)
-    result = Dict{Ptr{Nothing}, Any}()
-    # @show ref.CI.code
-    globals = filter(c -> lookthrough(c -> any(x -> !isimmutable(x) || x isa GlobalRef || x isa DataType || x isa Core.TypeName, c.args), c), 
-                     ref.CI.code)
-    for gl in globals
-        for c in gl[2].args
-            # @show c
-            if !isimmutable(c)
-                result[pointer_from_objref(c)] = c
-            elseif c isa GlobalRef
-                obj = eval(c)
-                if !isimmutable(obj)
-                    result[pointer_from_objref(obj)] = obj
-                end
-            end
-        end
-    end
-    invokes = filter((c) -> lookthrough(identify_invoke, c), ref.CI.code)
-    invokes = map((arg) -> process_invoke(DefaultConsumer(), ref, arg...), invokes)
-    for fi in invokes
-        canreflect(fi) || continue
-        fi in ctx.invokes && continue
-        push!(ctx.invokes, fi)
-        merge!(result, find_globals(ctx, reflect(fi)))
-    end
-    return result
-end
 
 """
-    fix_globals!(mod::LLVM.Module, d)
+    fix_globals!(mod::LLVM.Module)
 
 Replace function addresses in `mod` with references to global data structures.
-`d` is a `Dict` mapping a function address to a Julia global object.
 For each global variable, two LLVM global objects are created:
 
 * `jl.global.data` -- An LLVM 'i8' vector holding a serialized version of the Julia object.
@@ -58,7 +18,7 @@ The `inttopt` with the function address is replaced by `jl.global`.
 A function `jl_init_globals` is added to `mod`. This function deserializes the data in 
 `jl.global.data` and updates `jl.global`.
 """
-function fix_globals!(mod::LLVM.Module, d)
+function fix_globals!(mod::LLVM.Module)
     # Create a `jl_init_globals` function.
     jl_init_globals_func = LLVM.Function(mod, "jl_init_globals",
                                          LLVM.FunctionType(julia_to_llvm(Cvoid), LLVMType[]))
@@ -78,64 +38,36 @@ function fix_globals!(mod::LLVM.Module, d)
     gptrs = []
     for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
         occursin("inttoptr", string(instr)) || continue
-        # @show typeof(instr)
-        @show instr
-        # @show length(operands(instr))
 	ops = operands(instr)
 	for (i, op) in enumerate(ops)
             i == length(ops) && instr isa LLVM.CallInst && continue
             lastop = op
             if occursin("inttoptr", string(op)) 
-		    println("-------------------")
-                @show typeof(op)
-                @show op
                 if occursin("addrspacecast", string(op))
                     op = first(operands(op))
-                    # @show op
                 end
                 first(operands(op)) isa LLVM.ConstantInt || continue
                 ptr = Ptr{Any}(convert(Int, first(operands(op))))
-                # if haskey(d, ptr) && !in(d[ptr], objs)
-                #     obj = d[ptr]
-                @show obj = unsafe_pointer_to_objref(ptr)
-                # @show obj = unsafe_wrap(Vector{UInt}, convert(Ptr{UInt}, ptr), (5,))
-                # @show obj = unsafe_load(convert(Ptr{Any}, obj[1]))
-                # @show unsafe_load(ptr)
-                # @show obj = unsafe_load(convert(Ptr{Any}, ptr))
+                obj = unsafe_pointer_to_objref(ptr)
                 if !in(obj, objs)
                     push!(es, serialize(ctx, obj))
                     push!(objs, obj)
                     push!(instrs, lastop)
                     # Create pointers to the data.
-                    # gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global", 10)
                     gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
                     linkage!(gptr, LLVM.API.LLVMInternalLinkage)
                     LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
                     push!(gptrs, gptr)
 		    gptridx[obj] = i
-                else
-                    println("OBJ ALREADY IN OBJS")
                 end
 		gptr = gptrs[gptridx[obj]]
                 Builder(context(mod)) do builder
                     position!(builder, instr)
                     gptr2 = load!(builder, gptr) 
                     gptr3 = addrspacecast!(builder, gptr2, LLVM.PointerType(eltype(julia_to_llvm(Any)), 10))
-                    # replace_uses!(lastop, gptr3)
 		    ops[i] = gptr3
-                    println("*******************************")
-                    @show gptr3
-                    @show obj
                 end
-		# elseif !haskey(d,ptr)
-		# 	println("*******************")
-		# 	println("Pointer not found for ", ptr)
-		# 	@show instr
-        #         end
-        #         return true
             end
-            # lastop[] = op
-            # return false
         end
     end
     nglobals = length(es)
@@ -153,7 +85,6 @@ function fix_globals!(mod::LLVM.Module, d)
             return
         end
     end
-    @show ctx.store
     # Execute the deserializing function.
     deser_fun = eval(fune)
     v = take!(ctx.io)
@@ -195,13 +126,3 @@ function fix_globals!(mod::LLVM.Module, d)
     return
 end
 
-
-function f()
-    llvmcall(
-        ("""@test = global double 1.11""",
-         """%1 = load double, double* @test
-            store double 2.33, double* @test
-            %2 = load double, double* @test
-            ret double %2"""),
-    Float64, Tuple{})
-end

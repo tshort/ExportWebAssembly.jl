@@ -65,16 +65,14 @@ function fix_ccalls!(mod::LLVM.Module, d)
             # dest = called_value(instr)
             for op in operands(instr)
                 lastop = op
-                @show op
                 if occursin("inttoptr", string(op)) 
                     if occursin("addrspacecast", string(op)) || occursin("getelementptr", string(op))
                         op = first(operands(op))
-                        @show op
                     end
                     first(operands(op)) isa LLVM.ConstantInt || continue
-                    @show ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
+                    ptr = Ptr{Cvoid}(convert(Int, first(operands(op))))
                     if haskey(d, ptr)
-                        @show obj = d[ptr]
+                        obj = d[ptr]
                         newdest = GlobalVariable(mod, llvmtype(instr), string(d[ptr]))
                         LLVM.linkage!(newdest, LLVM.API.LLVMExternalLinkage)
                         replace_uses!(op, newdest)

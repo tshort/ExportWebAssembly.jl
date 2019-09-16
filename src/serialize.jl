@@ -73,7 +73,6 @@ Some simple types like boxed variables do not need to write anything to `ctx.io`
 They can return an expression that directly creates the object.
 """
 function serialize(ctx::SerializeContext, @nospecialize(x))
-	@show x
     haskey(_g, x) && return _g[x]
     # TODO: fix this major kludge.
     if nfields(x) > 0

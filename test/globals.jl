@@ -20,13 +20,12 @@ const b = "B"
 
 @testset "globals" begin
     f(x) = @inbounds a[1][3] > b[1] ? 2x : x
-    @show d = ExportWebAssembly.find_globals(f, Tuple{Int})
     m = irgen(f, Tuple{Int})
     # @show m
-    ExportWebAssembly.fix_globals!(m, d)
+    ExportWebAssembly.fix_globals!(m)
     # @show m
     ExportWebAssembly.optimize!(m)
-    @show m
+    # @show m
     LLVM.verify(m)
     
     write(m, "test.bc")
@@ -48,55 +47,51 @@ const b = "B"
     # @test str == (a, b)
 end
 
-# @testset "type" begin
-#     f() = Complex{Float64}
-#     d = ExportWebAssembly.find_globals(f, Tuple{})
-#     @show d
-#     m = irgen(f, Tuple{})
-#     # @show m
-#     ExportWebAssembly.fix_globals!(m, d)
-#     ExportWebAssembly.optimize!(m)
-#     @show m
-#     LLVM.verify(m)
-#     write(m, "test.bc")
-#     bindir = string(Sys.BINDIR, "/../tools")
-#     libpath = "./test.bc"
-#     dylibpath = abspath("test.so")
-    
-#     run(`$bindir/llc -filetype=obj -o=test.o -relocation-model=pic test.bc`, wait = true)
-#     run(`gcc -shared -fPIC -o test.so -L$bindir/../lib -ljulia test.o`, wait = true)
-#     dylib = Libdl.dlopen(dylibpath)
-    
-#     GC.enable(false)
-#     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-#     funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-#     res = ccall(Libdl.dlsym(dylib, funname), Any, ())
-#     Libdl.dlclose(dylib)
-#     GC.enable(true)
-#     @test string(res) == "Complex{Float64}" 
+@testset "type" begin
+    f() = Complex{Float64}
+    m = irgen(f, Tuple{})
+    # @show m
+    ExportWebAssembly.fix_globals!(m)
+    ExportWebAssembly.optimize!(m)
+    # @show m
+    LLVM.verify(m)
+    write(m, "test.bc")
+    bindir = string(Sys.BINDIR, "/../tools")
+    libpath = "./test.bc"
+    dylibpath = abspath("test.so")
+  
+    run(`$bindir/llc -filetype=obj -o=test.o -relocation-model=pic test.bc`, wait = true)
+    run(`gcc -shared -fPIC -o test.so -L$bindir/../lib -ljulia test.o`, wait = true)
+    dylib = Libdl.dlopen(dylibpath)
+  
+    GC.enable(false)
+    ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
+    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
+    res = ccall(Libdl.dlsym(dylib, funname), Any, ())
+    Libdl.dlclose(dylib)
+    GC.enable(true)
+    # @test string(res) == "Complex{Float64}" 
 
-#     f(@nospecialize(x)) = isa(x, Number) ? 1 : 0
-#     d = ExportWebAssembly.find_globals(f, Tuple{Any})
-#     @show d
-#     m = irgen(f, Tuple{Any})
-#     # @show m
-#     ExportWebAssembly.fix_globals!(m, d)
-#     ExportWebAssembly.optimize!(m)
-#     @show m
-#     LLVM.verify(m)
-#     write(m, "test.bc")
-#     bindir = string(Sys.BINDIR, "/../tools")
-#     libpath = "./test.bc"
-#     dylibpath = abspath("test.so")
-    
-#     run(`$bindir/llc -filetype=obj -o=test.o -relocation-model=pic test.bc`, wait = true)
-#     run(`gcc -shared -fPIC -o test.so -L$bindir/../lib -ljulia test.o`, wait = true)
-#     dylib = Libdl.dlopen(dylibpath)
-    
-#     GC.enable(false)
-#     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-#     funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-#     res = ccall(Libdl.dlsym(dylib, funname), Int, (Any,), 4.0im)
-#     Libdl.dlclose(dylib)
-#     GC.enable(true)
-# end
+    f(@nospecialize(x)) = isa(x, Number) ? 1 : 0
+    m = irgen(f, Tuple{Any})
+    # @show m
+    ExportWebAssembly.fix_globals!(m)
+    ExportWebAssembly.optimize!(m)
+    # @show m
+    LLVM.verify(m)
+    write(m, "test.bc")
+    bindir = string(Sys.BINDIR, "/../tools")
+    libpath = "./test.bc"
+    dylibpath = abspath("test.so")
+  
+    run(`$bindir/llc -filetype=obj -o=test.o -relocation-model=pic test.bc`, wait = true)
+    run(`gcc -shared -fPIC -o test.so -L$bindir/../lib -ljulia test.o`, wait = true)
+    dylib = Libdl.dlopen(dylibpath)
+  
+    GC.enable(false)
+    ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
+    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
+    res = ccall(Libdl.dlsym(dylib, funname), Int, (Any,), 4.0im)
+    Libdl.dlclose(dylib)
+    GC.enable(true)
+end
