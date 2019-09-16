@@ -36,6 +36,7 @@ function fix_globals!(mod::LLVM.Module)
     gptridx = Dict()
     instrs = []
     gptrs = []
+    j = 1   # counter for position in gptridx
     for fun in functions(mod), blk in blocks(fun), instr in instructions(blk)
         occursin("inttoptr", string(instr)) || continue
 	ops = operands(instr)
@@ -58,7 +59,8 @@ function fix_globals!(mod::LLVM.Module)
                     linkage!(gptr, LLVM.API.LLVMInternalLinkage)
                     LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
                     push!(gptrs, gptr)
-		    gptridx[obj] = i
+		    gptridx[obj] = j
+		    j += 1
                 end
 		gptr = gptrs[gptridx[obj]]
                 Builder(context(mod)) do builder
