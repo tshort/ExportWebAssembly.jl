@@ -20,6 +20,5 @@ end
         n = Int(unsafe_load(cglobal(:jl_n_threads, Cint)))
         return 2n
     end
-    d = ExportWebAssembly.find_globals(f, Tuple{})
     m = irgen(f, Tuple{})
 end

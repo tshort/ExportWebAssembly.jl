@@ -181,16 +181,25 @@ end
 
 advance!(io) = write(io, repeat('\0', -rem(io.ptr - 1, 8, RoundUp)))  # Align data to 8 bytes
 
-function serialize(ctx::SerializeContext, a::Array)
+function serialize(ctx::SerializeContext, a::Array{T,N}) where {T,N}
     advance!(ctx.io)
     elty = eltype(a)
+    aty = typeof(a)
     dims = size(a)
     ptr1 = ctx.io.ptr
+    atys = serialize(ctx, aty)
     if isbitstype(elty)
         write(ctx.io, a)
-        quote
-            p = Vptr + $ptr1 - 1
-            unsafe_wrap($(serialize(ctx, typeof(a))), convert(Ptr{$elty}, p), $dims)
+        if N == 1 
+            quote
+                p = Vptr + $ptr1 - 1
+                ccall(:jl_ptr_to_array_1d, $aty, (Any, Ptr{Cvoid}, Csize_t, Cint), $atys, p, $(length(a)), false)
+            end
+        else
+            quote
+                p = Vptr + $ptr1 - 1
+                ccall(:jl_ptr_to_array, $aty, (Any, Ptr{Cvoid}, Any, Int32), $atys, p, $(serialize(cts, dims)), false)
+            end
         end
     else
         idx = Int[]
@@ -202,10 +211,9 @@ function serialize(ctx::SerializeContext, a::Array)
             end
         end
         aname = gensym()
-        atype = serialize(ctx, typeof(a))
         resulte = [quote
             # $aname = Array{$elty, $(length(dims))}(undef, $dims)
-            $aname = ccall(:jl_new_array, $(typeof(a)), (Any, Any), $atype, $(serialize(ctx, dims)))
+            $aname = ccall(:jl_new_array, $aty, (Any, Any), $atys, $(serialize(ctx, dims)))
         end]
         for i in idx
             push!(resulte, quote
