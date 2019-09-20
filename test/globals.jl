@@ -39,12 +39,10 @@ const b = "B"
     
     GC.enable(false)
     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-    num = ccall(Libdl.dlsym(dylib, funname), Int, (Int,), 3)
+    num = ccall(Libdl.dlsym(dylib, "f"), Int, (Int,), 3)
     Libdl.dlclose(dylib)
     GC.enable(true)
     @test num == num
-    # @test str == (a, b)
 end
 
 const x = [1.33, 35.0]
@@ -70,12 +68,39 @@ const x = [1.33, 35.0]
     
     GC.enable(false)
     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-    num = ccall(Libdl.dlsym(dylib, funname), Int, (Int,), 3)
+    num = ccall(Libdl.dlsym(dylib, "f"), Int, (Int,), 3)
     Libdl.dlclose(dylib)
     GC.enable(true)
-    @test num == num
-    # @test str == (a, b)
+    @test num == f(3)
+end
+
+const xi = [3, 5]
+
+@testset "globals3" begin
+    f(i) = @inbounds xi[1] == 3 ? i : 2i
+    m = irgen(f, Tuple{Int})
+    # @show m
+    ExportWebAssembly.fix_globals!(m)
+    # @show m
+    ExportWebAssembly.optimize!(m)
+    # @show m
+    LLVM.verify(m)
+    
+    write(m, "test.bc")
+    bindir = string(Sys.BINDIR, "/../tools")
+    libpath = "./test.bc"
+    dylibpath = abspath("test.so")
+    
+    run(`$bindir/llc -filetype=obj -o=test.o -relocation-model=pic test.bc`, wait = true)
+    run(`gcc -shared -fPIC -o test.so -L$bindir/../lib -ljulia test.o`, wait = true)
+    dylib = Libdl.dlopen(dylibpath)
+    
+    GC.enable(false)
+    ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
+    num = ccall(Libdl.dlsym(dylib, "f"), Int, (Int,), 3)
+    Libdl.dlclose(dylib)
+    GC.enable(true)
+    @test num == f(3)
 end
 
 @testset "type" begin
@@ -97,8 +122,7 @@ end
   
     GC.enable(false)
     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-    res = ccall(Libdl.dlsym(dylib, funname), Any, ())
+    res = ccall(Libdl.dlsym(dylib, "f"), Any, ())
     Libdl.dlclose(dylib)
     GC.enable(true)
     # @test string(res) == "Complex{Float64}" 
@@ -121,8 +145,7 @@ end
   
     GC.enable(false)
     ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ())
-    funname = first(filter(s->startswith(s, "julia"), LLVM.name.(LLVM.functions(m))))
-    res = ccall(Libdl.dlsym(dylib, funname), Int, (Any,), 4.0im)
+    res = ccall(Libdl.dlsym(dylib, "f"), Int, (Any,), 4.0im)
     Libdl.dlclose(dylib)
     GC.enable(true)
 end

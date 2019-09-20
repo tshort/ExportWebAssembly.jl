@@ -182,23 +182,30 @@ end
 advance!(io) = write(io, repeat('\0', -rem(io.ptr - 1, 8, RoundUp)))  # Align data to 8 bytes
 
 function serialize(ctx::SerializeContext, a::Array{T,N}) where {T,N}
-    advance!(ctx.io)
     elty = eltype(a)
     aty = typeof(a)
     dims = size(a)
-    ptr1 = ctx.io.ptr
     atys = serialize(ctx, aty)
     if isbitstype(elty)
+        advance!(ctx.io)
+        ioptr = ctx.io.ptr
         write(ctx.io, a)
         if N == 1 
+            advance!(ctx.io)
+            ioptr = ctx.io.ptr
+            write(ctx.io, a)
             quote
-                p = Vptr + $ptr1 - 1
+                p = Vptr + $ioptr - 1
                 ccall(:jl_ptr_to_array_1d, $aty, (Any, Ptr{Cvoid}, Csize_t, Cint), $atys, p, $(length(a)), false)
             end
         else
+            dms = serialize(ctx, dims)
+            advance!(ctx.io)
+            ioptr = ctx.io.ptr
+            write(ctx.io, a)
             quote
-                p = Vptr + $ptr1 - 1
-                ccall(:jl_ptr_to_array, $aty, (Any, Ptr{Cvoid}, Any, Int32), $atys, p, $(serialize(cts, dims)), false)
+                p = Vptr + $ioptr - 1
+                ccall(:jl_ptr_to_array, $aty, (Any, Ptr{Cvoid}, Any, Int32), $atys, p, $dms, false)
             end
         end
     else

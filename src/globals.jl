@@ -123,7 +123,7 @@ function fix_globals!(mod::LLVM.Module)
     d = find_ccalls(deser_fun, tt)
     fix_ccalls!(deser_mod, d)
     # rename deserialization function to "_deserialize_globals"
-    fun = first(filter(x -> startswith(LLVM.name(x), "julia__deserialize_globals"), functions(deser_mod)))[2]
+    fun = first(filter(x -> LLVM.name(x) == "_deserialize_globals", functions(deser_mod)))[2]
     LLVM.name!(fun, "_deserialize_globals")
     linkage!(fun, LLVM.API.LLVMExternalLinkage)
     # link into the main module
@@ -202,13 +202,7 @@ function fix_globals!(mod::LLVM.Module)
                 end
                 x
             end
-            hasinttoptr = occursin("inttoptr", string(instr))
-            # hasinttoptr && println("--------")
-            # hasinttoptr && @show instr
             toinstr!(operands(instr))
-            hasinttoptr && println("--------AFTER")
-            hasinttoptr && @show instr
-            hasinttoptr && println()
         end
     end
     nglobals = length(es)
@@ -216,10 +210,7 @@ function fix_globals!(mod::LLVM.Module)
     for i in 1:nglobals
         # Assign the appropriate function argument to the appropriate global.
         es[i] = :(unsafe_store!($((Symbol("global", i))), $(es[i])))
-        # es[i] = :(unsafe_store!(convert(Ptr{Any}, pointer_from_objref($((Symbol("global", i))))), $(es[i])))
     end
-    @show ctx.init
-    @show es
     # Define the deserializing function.
     fune = quote
         function _deserialize_globals(Vptr, $((Symbol("global", i) for i in 1:nglobals)...))
@@ -261,8 +252,8 @@ function fix_globals!(mod::LLVM.Module)
     d = find_ccalls(deser_fun, tt)
     fix_ccalls!(deser_mod, d)
     # rename deserialization function to "_deserialize_globals"
-    fun = first(filter(x -> startswith(LLVM.name(x), "julia__deserialize_globals"), functions(deser_mod)))[2]
-    LLVM.name!(fun, "_deserialize_globals")
+    fun = first(filter(x -> LLVM.name(x) == "_deserialize_globals", functions(deser_mod)))[2]
+    # LLVM.name!(fun, "_deserialize_globals")
     linkage!(fun, LLVM.API.LLVMExternalLinkage)
     # link into the main module
     LLVM.link!(mod, deser_mod)

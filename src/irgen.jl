@@ -98,25 +98,25 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
 
     # the jlcall wrapper function should point us to the actual entry-point,
     # e.g. julia_kernel_vadd_62984
-#    entry_tag = let
-#        m = match(r"jfptr_(.+)_\d+", LLVM.name(wrapper))
-#        @assert m != nothing
-#        m.captures[1]
-#    end
-#    unsafe_delete!(mod, wrapper)
-#    entry = let
-#        re = Regex("julia_$(entry_tag)_\\d+")
-#        llvmcall_re = Regex("julia_$(entry_tag)_\\d+u\\d+")
-#        fs = collect(Iterators.filter(f->occursin(re, LLVM.name(f)) &&
-#                               !occursin(llvmcall_re, LLVM.name(f)), definitions))
-#        if length(fs) != 1
-#            compiler_error(f, tt, cap, "could not find single entry-point";
-#                           entry=>entry_tag, available=>[LLVM.name.(definitions)])
-#        end
-#        fs[1]
-#    end
-#
-#    LLVM.name!(entry, string(nameof(func)))
+   entry_tag = let
+       m = match(r"jfptr_(.+)_\d+", LLVM.name(wrapper))
+       @assert m != nothing
+       m.captures[1]
+   end
+   unsafe_delete!(mod, wrapper)
+   entry = let
+       re = Regex("julia_$(entry_tag)_\\d+")
+       llvmcall_re = Regex("julia_$(entry_tag)_\\d+u\\d+")
+       fs = collect(Iterators.filter(f->occursin(re, LLVM.name(f)) &&
+                              !occursin(llvmcall_re, LLVM.name(f)), definitions))
+       if length(fs) != 1
+           compiler_error(f, tt, cap, "could not find single entry-point";
+                          entry=>entry_tag, available=>[LLVM.name.(definitions)])
+       end
+       fs[1]
+   end
+
+   LLVM.name!(entry, string(nameof(func)))
 
     # link in dependent modules
     link!.(Ref(mod), dependencies)
