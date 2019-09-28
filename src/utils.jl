@@ -5,8 +5,8 @@ function julia_to_llvm(@nospecialize x)
     LLVMType(ccall(:julia_type_to_llvm, LLVM.API.LLVMTypeRef, (Any, Ref{UInt8}), x, isboxed))  # julia v1.1.1
 end
 
-# const jl_value_t_ptr = julia_to_llvm(Any)
-# const jl_value_t = eltype(jl_value_t_ptr)
+const jl_value_t_ptr = julia_to_llvm(Any)
+const jl_value_t = eltype(jl_value_t_ptr)
 # const jl_value_t_ptr_ptr = LLVM.PointerType(jl_value_t_ptr)
 # # cheat on these for now:
 # const jl_datatype_t_ptr = jl_value_t_ptr

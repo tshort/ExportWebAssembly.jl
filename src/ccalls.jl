@@ -10,18 +10,18 @@ find_ccalls(@nospecialize(f), @nospecialize(tt)) = find_ccalls(reflect(f, tt))
 
 function find_ccalls(ref::Reflection)
     result = Dict{Ptr{Nothing}, Symbol}()
-    foreigncalls = filter((c) -> lookthrough(identify_foreigncall, c), ref.CI.code)
+    foreigncalls = filter((c) -> lookthrough((c) -> c.head === :foreigncall && !(c.args[4] isa QuoteNode && c.args[4].value == :llvmcall), c), ref.CI.code)
+    # foreigncalls = filter((c) -> lookthrough((c) -> c.head === :foreigncall, c), ref.CI.code)
     for fc in foreigncalls
         sym = getsym(fc[2].args[1])
         address = eval(:(cglobal($(sym))))
-        result[address] = sym isa Tuple ? sym[1] : sym.value
+        result[address] = Symbol(sym isa Tuple ? sym[1] : sym.value)
     end
-    cglobals = filter((c) -> lookthrough(c -> c.head === :call && c.args[1] isa GlobalRef &&
-                                              c.args[1].name == :cglobal, c), ref.CI.code)
+    cglobals = filter((c) -> lookthrough(c -> c.head === :call && iscglobal(c.args[1]), c), ref.CI.code)
     for fc in cglobals
         sym = getsym(fc[2].args[2])
         address = eval(:(cglobal($(sym))))
-        result[address] = sym isa Tuple ? sym[1] : sym.value
+        result[address] = Symbol(sym isa Tuple ? sym[1] : sym.value)
     end
     invokes = filter((c) -> lookthrough(identify_invoke, c), ref.CI.code)
     invokes = map((arg) -> process_invoke(DefaultConsumer(), ref, arg...), invokes)
@@ -32,8 +32,12 @@ function find_ccalls(ref::Reflection)
     return result
 end
 
+getsym(x) = x
+getsym(x::String) = Symbol(x)
 getsym(x::QuoteNode) = x
 getsym(x::Expr) = eval.((x.args[2], x.args[3]))
+
+iscglobal(x) = x == cglobal || x isa GlobalRef && x.name == :cglobal
 
 
 """

@@ -30,6 +30,11 @@ const _td = IdDict(
     Array{Int32,1} => :jl_array_int32_type,
     Array{UInt8,1} => :jl_array_uint8_type,
     ErrorException => :jl_errorexception_type,
+    DataType => :jl_datatype_type,
+    UnionAll => :jl_unionall_type,
+    Union => :jl_union_type,
+    Core.TypeofBottom => :jl_typeofbottom_type,
+    TypeVar => :jl_tvar_type,
 )
 
 const _t = IdDict()
@@ -78,6 +83,7 @@ function serialize(ctx::SerializeContext, @nospecialize(x))
     if nfields(x) > 0
         return Expr(:tuple, (serialize(ctx, getfield(x,i)) for i in 1:nfields(x))...)
     end
+    return :(unsafe_load(cglobal(:jl_emptytuple, Any)))
 end
 
 function serialize(ctx::SerializeContext, @nospecialize(t::DataType))
