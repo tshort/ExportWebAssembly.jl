@@ -3,11 +3,12 @@ struct LLVMNativeCode    # thin wrapper
     p::Ptr{Cvoid}
 end
 
-function linfo(f, tt)
+function xlinfo(f, tt)
     # get the method instance
     world = typemax(UInt)
-    meth = which(f, tt)
-    sig_tt = Tuple{typeof(f), tt.parameters...}
+    g = (args...) -> Cassette.overdub(ctx, f, args...)
+    meth = which(g, tt)
+    sig_tt = Tuple{typeof(g), tt.parameters...}
     (ti, env) = ccall(:jl_type_intersection_with_env, Any,
                       (Any, Any), sig_tt, meth.sig)::Core.SimpleVector
     meth = Base.func_for_method_checked(meth, ti)
@@ -39,8 +40,9 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
     # get the method instance
     isa(func, Core.Builtin) && error("function is not a generic function")
     world = typemax(UInt)
-    meth = which(func, tt)
-    sig_tt = Tuple{typeof(func), tt.parameters...}
+    gfunc = (args...) -> Cassette.overdub(ctx, func, args...)
+    meth = which(gfunc, tt)
+    sig_tt = Tuple{typeof(gfunc), tt.parameters...}
     (ti, env) = ccall(:jl_type_intersection_with_env, Any,
                       (Any, Any), sig_tt, meth.sig)::Core.SimpleVector
     meth = Base.func_for_method_checked(meth, ti)
@@ -110,7 +112,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
        fs = collect(Iterators.filter(f->occursin(re, LLVM.name(f)) &&
                               !occursin(llvmcall_re, LLVM.name(f)), definitions))
        if length(fs) != 1
-           compiler_error(f, tt, cap, "could not find single entry-point";
+           compiler_error(func, tt, cap, "could not find single entry-point";
                           entry=>entry_tag, available=>[LLVM.name.(definitions)])
        end
        fs[1]
@@ -137,8 +139,9 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
 #            end
 #        end
 #    end
-    d = find_ccalls(func, tt)
+    d = find_ccalls(gfunc, tt)
     fix_ccalls!(mod, d)
+    #@show mod
     mod
 end
 

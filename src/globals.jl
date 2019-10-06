@@ -77,11 +77,14 @@ function fix_globals!(mod::LLVM.Module)
                         end
                         # return x
                         if !in(obj, objs)
-                            # @show obj
+                        println("****************")
+                            @show j
+                            @show obj
                             push!(es, serialize(ctx, obj))
                             push!(objs, obj)
                             # Create pointers to the data.
                             gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
+                            @show gptr
                             linkage!(gptr, LLVM.API.LLVMInternalLinkage)
                             LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
                             push!(gptrs, gptr)

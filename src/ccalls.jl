@@ -70,6 +70,7 @@ function fix_ccalls!(mod::LLVM.Module, d)
             for op in operands(instr)
                 lastop = op
                 if occursin("inttoptr", string(op)) 
+                    # @show instr
                     if occursin("addrspacecast", string(op)) || occursin("getelementptr", string(op))
                         op = first(operands(op))
                     end
