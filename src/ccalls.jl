@@ -33,7 +33,7 @@ function find_ccalls(ref::Reflection)
 end
 
 getsym(x) = x
-getsym(x::String) = Symbol(x)
+getsym(x::String) = QuoteNode(Symbol(x))
 getsym(x::QuoteNode) = x
 getsym(x::Expr) = eval.((x.args[2], x.args[3]))
 

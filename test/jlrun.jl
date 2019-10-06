@@ -35,7 +35,7 @@ macro jlrun(e)
         ExportWebAssembly.fix_globals!(m)
         # @show m
         ExportWebAssembly.optimize!(m)
-        # @show m
+        #@show m
         LLVM.verify(m)
         show_inttoptr(m)
         write(m, "test.bc")

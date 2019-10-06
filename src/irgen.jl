@@ -36,11 +36,11 @@ Generates Julia IR targeted for static compilation.
 `ccall` and `cglobal` uses have pointer references changed to symbols
 meant to be linked with libjulia and other libraries.
 """
-function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
+function irgen(@nospecialize(func), @nospecialize(tt); optimize = true, overdub = true)
     # get the method instance
     isa(func, Core.Builtin) && error("function is not a generic function")
     world = typemax(UInt)
-    gfunc = (args...) -> Cassette.overdub(ctx, func, args...)
+    gfunc = overdub ? (args...) -> Cassette.overdub(ctx, func, args...) : func
     meth = which(gfunc, tt)
     sig_tt = Tuple{typeof(gfunc), tt.parameters...}
     (ti, env) = ccall(:jl_type_intersection_with_env, Any,
@@ -139,7 +139,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true)
 #            end
 #        end
 #    end
-    d = find_ccalls(gfunc, tt)
+    d = find_ccalls(func, tt)
     fix_ccalls!(mod, d)
     #@show mod
     mod

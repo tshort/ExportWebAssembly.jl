@@ -59,3 +59,10 @@ hi() = print(Core.stdout, 'X')
 
 hello() = print(Core.stdout, "Hello world...\n")
 @jlrun hello()
+
+function g(i)
+    a = 1.0:0.1:10.0
+    @inbounds i > 3 ? a[1] : a[5]
+end
+
+@test g(4) == @jlrun g(4)
