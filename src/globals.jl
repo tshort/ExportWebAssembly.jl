@@ -107,14 +107,26 @@ function fix_globals!(mod::LLVM.Module)
                 position!(builder, instr)
                 ops = operands(instr)
                 N = opcode(instr) == LLVM.API.LLVMCall ? length(ops) - 1 : length(ops)
-                if opcode(instr) == LLVM.API.LLVMPHI
-                    # position!(builder, LLVM.terminator(BasicBlock(LLVM.API.LLVMGetPreviousBasicBlock(LLVM.blockref(blk)))))
-                    # @show blk
-                    # @show BasicBlock(LLVM.API.LLVMGetPreviousBasicBlock(LLVM.blockref(blk)))
-                    position!(builder, last(instructions(BasicBlock(LLVM.API.LLVMGetPreviousBasicBlock(LLVM.blockref(blk))))))
-                end
+                #if opcode(instr) == LLVM.API.LLVMPHI
+                #    # position!(builder, LLVM.terminator(BasicBlock(LLVM.API.LLVMGetPreviousBasicBlock(LLVM.blockref(blk)))))
+                #    @show fun
+                #    @show instr
+                #    @show blk
+                #    for o in ops
+                #        @show o
+                #    end
+                #    incm = LLVM.incoming(instr)
+                #    @show incm
+                #    for j in 1:length(incm)
+                #        @show incm[j]
+                #    end
+                #    position!(builder, last(instructions(BasicBlock(LLVM.API.LLVMGetPreviousBasicBlock(LLVM.blockref(blk))))))
+                #end
                 for i in 1:N
                     try
+                        if opcode(instr) == LLVM.API.LLVMPHI
+                            position!(builder, last(instructions(LLVM.incoming(instr)[i][2])))
+                        end
                         ops[i] = toinstr!(ops[i])
                     catch x
                     end

@@ -33,7 +33,8 @@ macro jlrun(e)
     quote
         m = irgen($efun, $tt)
         ExportWebAssembly.fix_globals!(m)
-        # @show m
+        #@show m
+        #LLVM.verify(m)
         ExportWebAssembly.optimize!(m)
         #@show m
         LLVM.verify(m)
