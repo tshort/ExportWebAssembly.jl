@@ -139,7 +139,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true, overdub 
 #            end
 #        end
 #    end
-    d = find_ccalls(func, tt)
+    d = find_ccalls(gfunc, tt)
     fix_ccalls!(mod, d)
     #@show mod
     mod

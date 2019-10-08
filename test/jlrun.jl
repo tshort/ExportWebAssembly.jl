@@ -32,11 +32,14 @@ macro jlrun(e)
     bindir = string(Sys.BINDIR, "/../tools")
     quote
         m = irgen($efun, $tt)
+        # m = irgen($efun, $tt, overdub = false)
+        ExportWebAssembly.optimize!(m)
         ExportWebAssembly.fix_globals!(m)
-        #@show m
-        #LLVM.verify(m)
         ExportWebAssembly.optimize!(m)
         #@show m
+        #LLVM.verify(m)
+        # ExportWebAssembly.optimize!(m)
+        # @show m
         LLVM.verify(m)
         show_inttoptr(m)
         write(m, "test.bc")

@@ -9,7 +9,7 @@ int main()
 {
    jl_init_with_image(".", "blank.ji");
    jl_init_globals();
-   printf("sin: %f\n", jsin(1.0));
+   printf("%f", jsin(0.5));
    jl_atexit_hook(0);
    return 0;
 }

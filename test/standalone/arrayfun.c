@@ -9,7 +9,7 @@ int main()
 {
    jl_init_with_image(".", "blank.ji");
    jl_init_globals();
-   printf("arrayfun: %ld\n", arrayfun(5));
+   printf("%ld", arrayfun(4));
    jl_atexit_hook(0);
    return 0;
 }
