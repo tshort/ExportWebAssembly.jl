@@ -168,6 +168,7 @@ function fix_globals!(mod::LLVM.Module)
     linkage!(fun, LLVM.API.LLVMExternalLinkage)
     # link into the main module
     LLVM.link!(mod, deser_mod)
+    @show mod
     return
 end
 

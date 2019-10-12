@@ -34,10 +34,10 @@ macro jlrun(e)
     quote
         m = irgen($efun, $tt)
         # m = irgen($efun, $tt, overdub = false)
-        ExportWebAssembly.optimize!(m)
+        # ExportWebAssembly.optimize!(m)
         ExportWebAssembly.fix_globals!(m)
         ExportWebAssembly.optimize!(m)
-        @show m
+        # @show m
         LLVM.verify(m)
         show_inttoptr(m)
         write(m, "test.bc")
