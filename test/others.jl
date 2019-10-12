@@ -66,3 +66,13 @@ function g(i)
 end
 
 @test g(4) == @jlrun g(4)
+
+fsimple() = [0:.001:2;][end]
+
+@test fsimple() == @jlrun fsimple()
+
+@noinline function fsym(x; l = :hello, s = :x)
+    s == :asdf ? x : 2x
+end
+gsym(x) = fsym(x, l = :hello, s = :asdf) + 1
+@test gsym(3) == @jlrun gsym(3)

@@ -1,5 +1,5 @@
-using ExportWebAssembly
-using Test
+include("../jlrun.jl")
+
 using Formatting
 
 twox(x) = 2x
@@ -21,16 +21,15 @@ end
 fsimple() = [[1.6, 3.3, 2.2],[1.6, 3.3, 2.2]][2][end]
 # fsimple() = [1.6, 3.3, 2.2][end]
 fsimple() = Float64[0:.001:2;][end]
-const rng = Float64[0:.001:2;]
-fsimple() = rng[end]
+fsimple() = [0:.001:2;][end]
 
 funcs = [
-    # (twox, Tuple{Int}, 4),
-    # (arrayfun, Tuple{Int}, 4),
-    # (jsin, Tuple{Float64}, 0.5),
-    # (arridx, Tuple{Int}, 4),
-    (fode, Tuple{}, ()),      # broken
-    # (fsimple, Tuple{}, ()),
+    (twox, Tuple{Int}, 4),
+    (arrayfun, Tuple{Int}, 4),
+    (jsin, Tuple{Float64}, 0.5),
+    (arridx, Tuple{Int}, 4),
+    (fode, Tuple{}, ()),
+    (fsimple, Tuple{}, ()),
 ]
 
 
@@ -91,6 +90,7 @@ for (func, tt, val) in funcs
     # ExportWebAssembly.optimize!(m)
     ExportWebAssembly.fix_globals!(m)
     ExportWebAssembly.optimize!(m)
+    show_inttoptr(m)
     # @show m
     write(m, "$fname.bc")
     run(`$bindir/llc -filetype=obj -o=$fname.o -relocation-model=pic $fname.bc`, wait = true)

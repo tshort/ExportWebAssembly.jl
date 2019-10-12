@@ -1,5 +1,5 @@
 using Test, ExportWebAssembly, Libdl
-import LLVM
+using LLVM
 
 function show_inttoptr(mod)
     for fun in LLVM.functions(mod), blk in LLVM.blocks(fun), instr in LLVM.instructions(blk)
@@ -30,22 +30,20 @@ macro jlrun(e)
     rettype = ct[1][2]
     pkgdir = @__DIR__
     bindir = string(Sys.BINDIR, "/../tools")
+    libdir = string(Sys.BINDIR, "/../lib")
     quote
         m = irgen($efun, $tt)
         # m = irgen($efun, $tt, overdub = false)
         ExportWebAssembly.optimize!(m)
         ExportWebAssembly.fix_globals!(m)
         ExportWebAssembly.optimize!(m)
-        #@show m
-        #LLVM.verify(m)
-        # ExportWebAssembly.optimize!(m)
-        # @show m
+        @show m
         LLVM.verify(m)
         show_inttoptr(m)
         write(m, "test.bc")
         # run($(`$bindir/clang -shared -fpic $libpath -o $dylibpath -L$bindir/../lib -ljulia -ldSFMT -lopenblas64_`), wait = true)
-        run($(`$bindir/llc -filetype=obj -o=test.o -relocation-model=pic test.bc`), wait = true)
-        run($(`gcc -shared -fPIC -o test.so -L$bindir/../lib -ljulia test.o`), wait = true)
+        run($(`llc -filetype=obj -o=test.o -relocation-model=pic test.bc`), wait = true)
+        run($(`gcc -shared -fPIC -o test.so -L$libdir -ljulia test.o`), wait = true)
         dylib = Libdl.dlopen($dylibpath)
         ccall(Libdl.dlsym(dylib, "jl_init_globals"), Cvoid, ()) 
         res = ccall(Libdl.dlsym(dylib, $(Meta.quot(fun))),

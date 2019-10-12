@@ -157,7 +157,6 @@ function ode23s(F, y0, tspan;
             #     # add the intermediate points
                 push!(tout, t + h)
                 push!(yout, ynew)
-            #     # Core.print("Second\n")
             end
 
             # update solution
