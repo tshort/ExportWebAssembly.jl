@@ -69,7 +69,7 @@ function fix_globals!(mod::LLVM.Module)
                         if !in(obj, objs)
                             push!(es, serialize(ctx, obj))
                             println("-...................")
-                            # @show typeof(obj)
+                            @show instr
                             @show obj
                             # v = take!(ctx.io)
                             # write(ctx.io, v)
@@ -85,7 +85,7 @@ function fix_globals!(mod::LLVM.Module)
                             j += 1
                         end
                         gptr = gptrs[gptridx[obj]]
-                        gptr2 = pointercast!(builder, load!(builder, gptr))
+                        gptr2 = pointercast!(builder, load!(builder, gptr), llvmtype(x))
                         return gptr2
                     end
                     return x
@@ -104,13 +104,13 @@ function fix_globals!(mod::LLVM.Module)
                 ops = operands(instr)
                 N = opcode(instr) == LLVM.API.LLVMCall ? length(ops) - 1 : length(ops)
                 for i in 1:N
-                    try
+                    #try
                         if opcode(instr) == LLVM.API.LLVMPHI
                             position!(builder, last(instructions(LLVM.incoming(instr)[i][2])))
                         end
                         ops[i] = toinstr!(ops[i])
-                    catch x
-                    end
+                    #catch x
+                    #end
                 end
             end
         end
