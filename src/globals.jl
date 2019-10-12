@@ -64,18 +64,8 @@ function fix_globals!(mod::LLVM.Module)
                         return gep!(builder, val, [ops[i] for i in 2:length(ops)])
                     # elseif _opcode(x) == LLVM.API.LLVMIntToPtr && eltype(julia_to_llvm(Any)) in (eltype(llvmtype(x)), eltype(eltype(llvmtype(x))))
                     elseif _opcode(x) == LLVM.API.LLVMIntToPtr
-                        if eltype(llvmtype(x)) == eltype(julia_to_llvm(Any))
-                            ptr = Ptr{Any}(convert(Int, first(operands(x))))
-                            obj = unsafe_pointer_to_objref(ptr)
-                        elseif eltype(eltype(llvmtype(x))) == eltype(julia_to_llvm(Any))
-                            # STILL BROKEN - need to modify the load below?
-                            ptr = Ptr{Ptr{Any}}(convert(Int, first(operands(x))))
-                            obj = unsafe_load(unsafe_load(ptr))
-                            return x
-                        else
-                            return x
-                        end
-                        # return x
+                        ptr = Ptr{Any}(convert(Int, first(operands(x))))
+                        obj = unsafe_pointer_to_objref(ptr)
                         if !in(obj, objs)
                             push!(es, serialize(ctx, obj))
                             println("-...................")
@@ -95,7 +85,7 @@ function fix_globals!(mod::LLVM.Module)
                             j += 1
                         end
                         gptr = gptrs[gptridx[obj]]
-                        gptr2 = load!(builder, gptr) 
+                        gptr2 = pointercast!(builder, load!(builder, gptr))
                         return gptr2
                     end
                     return x
