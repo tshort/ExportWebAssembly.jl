@@ -1,6 +1,3 @@
-using Test, ExportWebAssembly, Libdl
-import LLVM
-
 include("jlrun.jl")
 
 # @testset "serialize" begin
