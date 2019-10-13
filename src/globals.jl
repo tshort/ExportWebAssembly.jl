@@ -41,6 +41,43 @@ function fix_globals!(mod::LLVM.Module)
     gptrs = []
     j = 1   # counter for position in gptridx
     Builder(context(mod)) do builder
+        toinstr!(x) = x
+        function toinstr!(x::LLVM.ConstantExpr)
+            if _opcode(x) == LLVM.API.LLVMAddrSpaceCast
+                val = toinstr!(first(operands(x)))
+                ret = addrspacecast!(builder, val, llvmtype(x))
+                return ret
+            elseif _opcode(x) == LLVM.API.LLVMGetElementPtr
+                ops = operands(x)
+                val = toinstr!(first(ops))
+                ret = gep!(builder, val, [ops[i] for i in 2:length(ops)])
+                return ret
+            elseif _opcode(x) == LLVM.API.LLVMBitCast
+                ops = operands(x)
+                val = toinstr!(first(ops))
+                ret = pointercast!(builder, val, llvmtype(x))
+                return ret
+            elseif _opcode(x) == LLVM.API.LLVMIntToPtr
+                ptr = Ptr{Any}(convert(Int, first(operands(x))))
+                @show obj = unsafe_pointer_to_objref(ptr)
+                if !in(obj, objs)
+                    push!(es, serialize(ctx, obj))
+                    push!(objs, obj)
+                    # Create pointers to the data.
+                    gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
+                    linkage!(gptr, LLVM.API.LLVMInternalLinkage)
+                    LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
+                    push!(gptrs, gptr)
+                    gptridx[obj] = j
+                    j += 1
+                end
+                gptr = gptrs[gptridx[obj]]
+                gptr2 = load!(builder, gptr)
+                ret = pointercast!(builder, gptr2, llvmtype(x))
+                return ret
+            end
+            return x
+        end
         for fun in functions(mod)
             if startswith(LLVM.name(fun), "jfptr")
                 unsafe_delete!(mod, fun)
@@ -51,72 +88,26 @@ function fix_globals!(mod::LLVM.Module)
                 # Set up functions to walk the operands of the instruction
                 # and convert appropriate ConstantExpr's to instructions.
                 # Look for `LLVMIntToPtr` expressions.
-                function toinstr!(x)
-                    return x
-                end
-                function toinstr!(x::LLVM.ConstantExpr)
-                    if _opcode(x) == LLVM.API.LLVMAddrSpaceCast
-                        val = toinstr!(first(operands(x)))
-                        return addrspacecast!(builder, val, llvmtype(x))
-                    elseif _opcode(x) == LLVM.API.LLVMGetElementPtr
-                        ops = operands(x)
-                        val = toinstr!(first(ops))
-                        return gep!(builder, val, [ops[i] for i in 2:length(ops)])
-                    # elseif _opcode(x) == LLVM.API.LLVMIntToPtr && eltype(julia_to_llvm(Any)) in (eltype(llvmtype(x)), eltype(eltype(llvmtype(x))))
-                    elseif _opcode(x) == LLVM.API.LLVMIntToPtr
-                        ptr = Ptr{Any}(convert(Int, first(operands(x))))
-                        obj = unsafe_pointer_to_objref(ptr)
-                        if !in(obj, objs)
-                            push!(es, serialize(ctx, obj))
-                            println("-...................")
-                            @show instr
-                            @show obj
-                            # v = take!(ctx.io)
-                            # write(ctx.io, v)
-                            # @show v
-                            # @show j
-                            push!(objs, obj)
-                            # Create pointers to the data.
-                            gptr = GlobalVariable(mod, julia_to_llvm(Any), "jl.global")
-                            linkage!(gptr, LLVM.API.LLVMInternalLinkage)
-                            LLVM.API.LLVMSetInitializer(LLVM.ref(gptr), LLVM.ref(null(julia_to_llvm(Any))))
-                            push!(gptrs, gptr)
-                            gptridx[obj] = j
-                            j += 1
-                        end
-                        gptr = gptrs[gptridx[obj]]
-                        gptr2 = pointercast!(builder, load!(builder, gptr), llvmtype(x))
-                        return gptr2
-                    end
-                    return x
-                end
-                function toinstr!(x::LLVM.UserOperandSet)
-                    for (i,op) in enumerate(x)
-                        op isa LLVM.Instruction && opcode(op) == LLVM.API.LLVMCall && continue
-                        try
-                            x[i] = toinstr!(op)
-                        catch x
-                        end
-                    end
-                    x
-                end
                 position!(builder, instr)
                 ops = operands(instr)
                 N = opcode(instr) == LLVM.API.LLVMCall ? length(ops) - 1 : length(ops)
+                @show instr
                 for i in 1:N
-                    #try
+                    try
                         if opcode(instr) == LLVM.API.LLVMPHI
                             position!(builder, last(instructions(LLVM.incoming(instr)[i][2])))
                         end
+                        @show o = ops[i]
                         ops[i] = toinstr!(ops[i])
-                    #catch x
-                    #end
+                    catch x
+                    end
                 end
             end
         end
     end
     nglobals = length(es)
-
+    #@show mod
+    #verify(mod)
     for i in 1:nglobals
         # Assign the appropriate function argument to the appropriate global.
         es[i] = :(unsafe_store!($((Symbol("global", i))), $(es[i])))
@@ -168,7 +159,6 @@ function fix_globals!(mod::LLVM.Module)
     linkage!(fun, LLVM.API.LLVMExternalLinkage)
     # link into the main module
     LLVM.link!(mod, deser_mod)
-    @show mod
     return
 end
 
