@@ -59,7 +59,7 @@ function fix_globals!(mod::LLVM.Module)
                 return ret
             elseif _opcode(x) == LLVM.API.LLVMIntToPtr
                 ptr = Ptr{Any}(convert(Int, first(operands(x))))
-                @show obj = unsafe_pointer_to_objref(ptr)
+                obj = unsafe_pointer_to_objref(ptr)
                 if !in(obj, objs)
                     push!(es, serialize(ctx, obj))
                     push!(objs, obj)
@@ -91,13 +91,14 @@ function fix_globals!(mod::LLVM.Module)
                 position!(builder, instr)
                 ops = operands(instr)
                 N = opcode(instr) == LLVM.API.LLVMCall ? length(ops) - 1 : length(ops)
-                @show instr
+                if opcode(instr) == LLVM.API.LLVMCall && name(last(operands(instr))) == "jl_type_error"
+                    continue
+                end
                 for i in 1:N
                     try
                         if opcode(instr) == LLVM.API.LLVMPHI
                             position!(builder, last(instructions(LLVM.incoming(instr)[i][2])))
                         end
-                        @show o = ops[i]
                         ops[i] = toinstr!(ops[i])
                     catch x
                     end
