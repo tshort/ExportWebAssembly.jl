@@ -69,6 +69,7 @@ totext(x::Tuple{}) = ""
 
 dir = @__DIR__
 bindir = string(Sys.BINDIR, "/../tools")
+bindir = string(Sys.BINDIR)
 
 for (func, tt, val) in funcs
     fname = nameof(func)
@@ -93,7 +94,7 @@ for (func, tt, val) in funcs
     show_inttoptr(m)
     # @show m
     write(m, "$fname.bc")
-    run(`$bindir/llc -filetype=obj -o=$fname.o -relocation-model=pic $fname.bc`, wait = true)
+    run(`llc -filetype=obj -o=$fname.o -relocation-model=pic $fname.bc`, wait = true)
     run(`gcc -shared -fpic $fname.o -o lib$fname.so`)
     run(`gcc -c -std=gnu99 -I$bindir/../include/julia -DJULIA_ENABLE_THREADING=1 -fPIC $fname.c`)
     run(`gcc -o $fname $fname.o -L$dir -L$bindir/../lib -Wl,--unresolved-symbols=ignore-in-object-files -Wl,-rpath,'.' -Wl,-rpath,$bindir/../lib -ljulia -l$fname`)
