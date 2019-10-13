@@ -24,12 +24,12 @@ fsimple() = Float64[0:.001:2;][end]
 fsimple() = [0:.001:2;][end]
 
 funcs = [
-    (twox, Tuple{Int}, 4),
-    (arrayfun, Tuple{Int}, 4),
-    (jsin, Tuple{Float64}, 0.5),
-    (arridx, Tuple{Int}, 4),
+#    (twox, Tuple{Int}, 4),
+#    (arrayfun, Tuple{Int}, 4),
+#    (jsin, Tuple{Float64}, 0.5),
+#    (arridx, Tuple{Int}, 4),
+#    (fsimple, Tuple{}, ()),
     (fode, Tuple{}, ()),
-    (fsimple, Tuple{}, ()),
 ]
 
 
@@ -87,8 +87,6 @@ for (func, tt, val) in funcs
                  init = Ctemplate)
     write("$fname.c", Ctxt)
     m = ExportWebAssembly.irgen(func, tt)
-    # @show m
-    # ExportWebAssembly.optimize!(m)
     ExportWebAssembly.fix_globals!(m)
     ExportWebAssembly.optimize!(m)
     show_inttoptr(m)

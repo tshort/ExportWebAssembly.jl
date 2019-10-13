@@ -10,7 +10,7 @@ find_ccalls(@nospecialize(f), @nospecialize(tt)) = find_ccalls(reflect(f, tt))
 
 function find_ccalls(ref::Reflection)
     result = Dict{Ptr{Nothing}, Symbol}()
-    foreigncalls = filter((c) -> lookthrough((c) -> c.head === :foreigncall && !(c.args[4] isa QuoteNode && c.args[4].value == :llvmcall), c), ref.CI.code)
+    foreigncalls = filter((c) -> lookthrough((c) -> c.head === :foreigncall && !(c.args[5] isa QuoteNode && c.args[5].value == :llvmcall), c), ref.CI.code)
     # foreigncalls = filter((c) -> lookthrough((c) -> c.head === :foreigncall, c), ref.CI.code)
     for fc in foreigncalls
         sym = getsym(fc[2].args[1])
