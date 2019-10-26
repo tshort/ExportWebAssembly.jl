@@ -41,6 +41,7 @@ function irgen(@nospecialize(func), @nospecialize(tt); optimize = true, overdub 
     isa(func, Core.Builtin) && error("function is not a generic function")
     world = typemax(UInt)
     gfunc = overdub ? (args...) -> Cassette.overdub(ctx, func, args...) : func
+    # gfunc = overdub ? (args...) -> fixer(func, args...) : func
     meth = which(gfunc, tt)
     sig_tt = Tuple{typeof(gfunc), tt.parameters...}
     (ti, env) = ccall(:jl_type_intersection_with_env, Any,

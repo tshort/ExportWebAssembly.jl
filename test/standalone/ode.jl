@@ -142,14 +142,14 @@ function ode23s(F, y0, tspan;
             # # if points==:specified || points==:all
             #     # only points in tspan are requested
             #     # -> find relevant points in (t,t+h]
-            #     for toi in tspan[(tspan.>t) .& (tspan.<=t+h)]
-            #         # rescale to (0,1]
-            #         s = (toi-t)/h
+                for toi in tspan[(tspan.>t) .& (tspan.<=t+h)]
+                    # rescale to (0,1]
+                    s = (toi-t)/h
 
-            #         # use interpolation formula to get solutions at t=toi
-            #         push!(tout, toi)
-            #         push!(yout, y + h*( k1*s*(1-s)/(1-2*d) + k2*s*(s-2*d)/(1-2*d)))
-            #     end
+                    # use interpolation formula to get solutions at t=toi
+                    push!(tout, toi)
+                    push!(yout, y + h*( k1*s*(1-s)/(1-2*d) + k2*s*(s-2*d)/(1-2*d)))
+                end
             #     # Core.print("First\n")
             # # end
             # if points==:all

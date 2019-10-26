@@ -30,5 +30,9 @@ const ctx = Cassette.disablehooks(Ctx(pass = Pass))
 
 #@inline Cassette.overdub(ctx::Ctx, ::typeof(+), a::T, b::T) where T<:Union{Float32, Float64} = add_float_contract(a, b)
 
+
+@inline Cassette.overdub(ctx::Ctx, f, args...) = f(args...)
+
+
 contextualize(f::F) where F = (args...) -> Cassette.overdub(ctx, f, args...)
 

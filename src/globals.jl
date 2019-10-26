@@ -1,8 +1,38 @@
+using InteractiveUtils
+
 struct GlobalsContext
     invokes::Set{Any}
 end
 GlobalsContext() = GlobalsContext(Set())
 
+typeaddress(addr) = UInt(addr) < 0x10 ? UInt(0) : unsafe_load(Ptr{UInt}((UInt(addr) - sizeof(Int)))) & ~UInt(0x0f)
+canuseaddress(addr) = typeaddress(typeaddress(addr)) == UInt(pointer_from_objref(DataType))
+canloadaddress(addr) = typeaddress(typeaddress(typeaddress(addr))) == UInt(pointer_from_objref(DataType))
+
+const TA = Set{UInt}()
+
+# fill_types() = foreach(fill_types, setdiff(subtypes(Any), [Any,Function]))
+fill_types() = foreach(fill_types, setdiff(subtypes(Any), [Any]))
+
+fill_types(t::UnionAll) = fill_types(t.body)
+
+function fill_types(t::DataType)
+    if t.abstract
+        foreach(fill_types, subtypes(t))
+    elseif t.isconcretetype
+        push!(TA, UInt(pointer_from_objref(t)))
+    else
+        tc = t.name.cache
+        for i in 1:length(tc)
+            if isassigned(tc, i)
+                fill_types(tc[i])
+            end
+        end
+    end
+end
+
+
+_opcode(x::LLVM.ConstantExpr) = LLVM.API.LLVMGetConstOpcode(LLVM.ref(x))
 
 """
     fix_globals!(mod::LLVM.Module)
@@ -19,9 +49,8 @@ A function `jl_init_globals` is added to `mod`. This function deserializes the d
 `jl.global.data` and updates `jl.global`.
 """
 
-_opcode(x::LLVM.ConstantExpr) = LLVM.API.LLVMGetConstOpcode(LLVM.ref(x))
-
 function fix_globals!(mod::LLVM.Module)
+    fill_types()        
     # Create a `jl_init_globals` function.
     jl_init_globals_func = LLVM.Function(mod, "jl_init_globals",
                                          LLVM.FunctionType(julia_to_llvm(Cvoid), LLVMType[]))
@@ -58,8 +87,16 @@ function fix_globals!(mod::LLVM.Module)
                 ret = pointercast!(builder, val, llvmtype(x))
                 return ret
             elseif _opcode(x) == LLVM.API.LLVMIntToPtr
-                ptr = Ptr{Any}(convert(Int, first(operands(x))))
-                obj = unsafe_pointer_to_objref(ptr)
+                addr = convert(UInt, first(operands(x)))
+                ptr = Ptr{Any}(addr)
+                if typeaddress(addr) in TA
+                    print("FOUND ------------------ ")
+                    @show obj = unsafe_pointer_to_objref(ptr)
+                else
+                    println("NOT FOUND -------------- ")
+                    # @show obj = unsafe_pointer_to_objref(ptr)
+                    return x
+                end
                 if !in(obj, objs)
                     push!(es, serialize(ctx, obj))
                     push!(objs, obj)
@@ -83,24 +120,32 @@ function fix_globals!(mod::LLVM.Module)
                 unsafe_delete!(mod, fun)
                 continue
             end
-                    
-            for blk in blocks(fun), instr in instructions(blk)
-                # Set up functions to walk the operands of the instruction
-                # and convert appropriate ConstantExpr's to instructions.
-                # Look for `LLVMIntToPtr` expressions.
-                position!(builder, instr)
-                ops = operands(instr)
-                N = opcode(instr) == LLVM.API.LLVMCall ? length(ops) - 1 : length(ops)
-                if opcode(instr) == LLVM.API.LLVMCall && name(last(operands(instr))) == "jl_type_error"
-                    continue
-                end
-                for i in 1:N
-                    try
-                        if opcode(instr) == LLVM.API.LLVMPHI
-                            position!(builder, last(instructions(LLVM.incoming(instr)[i][2])))
+            println()
+            @show LLVM.name(fun)
+            for blk in blocks(fun)
+                for instr in instructions(blk)
+                    # Set up functions to walk the operands of the instruction
+                    # and convert appropriate ConstantExpr's to instructions.
+                    # Look for `LLVMIntToPtr` expressions.
+                    position!(builder, instr)
+                    ops = operands(instr)
+                    N = opcode(instr) == LLVM.API.LLVMCall ? length(ops) - 1 : length(ops)
+                    if opcode(instr) == LLVM.API.LLVMCall && name(last(operands(instr))) == "jl_type_error"
+                        continue
+                    end
+                    # isload = opcode(instr) == LLVM.API.LLVMLoad 
+                    # if opcode(instr) == LLVM.API.LLVMCall && name(last(operands(instr))) == "jl_copy_ast"
+                    #     println("BREAKING")
+                    #     # break
+                    # end
+                    for i in 1:N
+                        try
+                            if opcode(instr) == LLVM.API.LLVMPHI
+                                position!(builder, last(instructions(LLVM.incoming(instr)[i][2])))
+                            end
+                            ops[i] = toinstr!(ops[i])
+                        catch x
                         end
-                        ops[i] = toinstr!(ops[i])
-                    catch x
                     end
                 end
             end

@@ -22,6 +22,14 @@ fsimple() = [[1.6, 3.3, 2.2],[1.6, 3.3, 2.2]][2][end]
 # fsimple() = [1.6, 3.3, 2.2][end]
 fsimple() = Float64[0:.001:2;][end]
 fsimple() = [0:.001:2;][end]
+function gbitarray1(i)
+    a = 1.0:0.1:10.0
+    @inbounds i > 3 ? a[(a.>3.0)][1] : a[5]   # works
+end
+function gbitarray(i)
+    a = 1.0:0.1:10.0
+    @inbounds i > 3 ? a[(a.>3.0) .& (a .< 5.0)][1] : a[5]
+end
 
 funcs = [
 #    (twox, Tuple{Int}, 4),
@@ -29,7 +37,8 @@ funcs = [
 #    (jsin, Tuple{Float64}, 0.5),
 #    (arridx, Tuple{Int}, 4),
 #    (fsimple, Tuple{}, ()),
-    (fode, Tuple{}, ()),
+#    (fode, Tuple{}, ()),
+    (gbitarray, Tuple{Int}, 4),
 ]
 
 
@@ -73,6 +82,7 @@ bindir = string(Sys.BINDIR)
 
 for (func, tt, val) in funcs
     fname = nameof(func)
+    @show func(val...)
     rettype = Base.return_types(func, tt)[1]
     argtype = length(tt.types) > 0 ? tt.types[1] : Nothing
     fmt = Cformatmap[rettype]
@@ -92,6 +102,7 @@ for (func, tt, val) in funcs
     show_inttoptr(m)
     # @show m
     write(m, "$fname.bc")
+    run(`llvm-dis $fname.bc`)
     run(`llc -filetype=obj -o=$fname.o -relocation-model=pic $fname.bc`, wait = true)
     run(`gcc -shared -fpic $fname.o -o lib$fname.so`)
     run(`gcc -c -std=gnu99 -I$bindir/../include/julia -DJULIA_ENABLE_THREADING=1 -fPIC $fname.c`)
