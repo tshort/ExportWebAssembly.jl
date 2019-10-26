@@ -49,9 +49,9 @@ farray() = arr
 @show farray()
 # @test farray() == @jlrun farray()
 
-@noinline f(x) = 3x
+@noinline f0(x) = 3x
 @noinline fop(f, x) = 2f(x)
-funcall(x) = fop(f, x)
+funcall(x) = fop(f0, x)
 @test funcall(2) == @jlrun funcall(2)
 
 hi() = print(Core.stdout, 'X')
@@ -60,12 +60,12 @@ hi() = print(Core.stdout, 'X')
 hello() = print(Core.stdout, "Hello world...\n")
 @jlrun hello()
 
-function g(i)
-    a = 1.0:0.1:10.0
+function gx(i)
+    a = 2.0:0.1:10.0
     @inbounds i > 3 ? a[1] : a[5]
 end
 
-@test g(4) == @jlrun g(4)
+@test gx(4) == @jlrun gx(4)
 
 fsimple() = [0:.001:2;][end]
 

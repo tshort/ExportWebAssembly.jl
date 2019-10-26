@@ -24,14 +24,22 @@ fsimple() = Float64[0:.001:2;][end]
 fsimple() = [0:.001:2;][end]
 
 funcs = [
-#    (twox, Tuple{Int}, 4),
-#    (arrayfun, Tuple{Int}, 4),
-#    (jsin, Tuple{Float64}, 0.5),
-#    (arridx, Tuple{Int}, 4),
-#    (fsimple, Tuple{}, ()),
+    (twox, Tuple{Int}, 4),
+    (arrayfun, Tuple{Int}, 4),
+    (jsin, Tuple{Float64}, 0.5),
+    (arridx, Tuple{Int}, 4),
+    (fsimple, Tuple{}, ()),
     (fode, Tuple{}, ()),
 ]
 
+# create `blank.ji` for initialization
+julia_path = joinpath(Sys.BINDIR, Base.julia_exename())
+base_dir = dirname(Base.find_source_file("sysimg.jl"))
+wd = pwd()
+open(println, "blank.jl", "w")
+cd(base_dir) do
+    run(`$(julia_path) --output-ji $(wd)/blank.ji $(wd)/blank.jl`)
+end
 
 Ctemplate = """
 #include <stdio.h> 
@@ -89,7 +97,7 @@ for (func, tt, val) in funcs
     m = ExportWebAssembly.irgen(func, tt)
     ExportWebAssembly.fix_globals!(m)
     ExportWebAssembly.optimize!(m)
-    show_inttoptr(m)
+    # show_inttoptr(m)
     # @show m
     write(m, "$fname.bc")
     run(`llc -filetype=obj -o=$fname.o -relocation-model=pic $fname.bc`, wait = true)
